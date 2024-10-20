@@ -1,0 +1,15 @@
+[package]
+name = "pong"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arraydeque = "0.5.1"
+crossterm = "0.28.1"
+env_logger = "0.11.5"
+futures = "0.3.31"
+log = "0.4.22"
+ratatui = "0.28.1"
+reqwest = "0.12.8"
+statrs = "0.17.1"
+tokio = { version = "1", features = ["full"] }
