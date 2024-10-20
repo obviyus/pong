@@ -16,7 +16,7 @@ use ratatui::{
 };
 use regions::REGIONS_LIST;
 use reqwest::Client;
-use statrs::statistics::Statistics;
+use statrs::statistics::{Data, OrderStatistics, Statistics};
 use std::time::{Duration, Instant};
 use std::{io::stdout, sync::Arc};
 use tokio::{
@@ -71,6 +71,24 @@ impl<'a> PingStats<'a> {
 
     fn last(&self) -> Option<f64> {
         self.latencies.iter().last().copied()
+    }
+
+    fn p95(&self) -> Option<f64> {
+        if self.latencies.is_empty() {
+            None
+        } else {
+            let mut data = Data::new(self.latencies.iter().copied().collect::<Vec<_>>());
+            Some(data.percentile(95))
+        }
+    }
+
+    fn p99(&self) -> Option<f64> {
+        if self.latencies.is_empty() {
+            None
+        } else {
+            let mut data = Data::new(self.latencies.iter().copied().collect::<Vec<_>>());
+            Some(data.percentile(99))
+        }
     }
 }
 
@@ -169,6 +187,8 @@ async fn render_ui(
                     let min_text = format_latency_option(stat.min());
                     let max_text = format_latency_option(stat.max());
                     let stddev_text = format_latency_option(stat.stddev());
+                    let p95_text = format_latency_option(stat.p95());
+                    let p99_text = format_latency_option(stat.p99());
 
                     let last_value = stat.last();
                     let avg_value = stat.avg();
@@ -193,17 +213,21 @@ async fn render_ui(
                             stddev_text,
                             Style::default().fg(Color::Yellow),
                         )),
+                        Cell::from(Span::styled(p95_text, Style::default().fg(Color::Yellow))),
+                        Cell::from(Span::styled(p99_text, Style::default().fg(Color::Yellow))),
                     ])
                 })
                 .collect();
 
             let widths = [
-                Constraint::Percentage(30),
-                Constraint::Percentage(14),
-                Constraint::Percentage(14),
-                Constraint::Percentage(14),
-                Constraint::Percentage(14),
-                Constraint::Percentage(14),
+                Constraint::Percentage(20),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
             ];
 
             let table = Table::new(rows, &widths)
@@ -220,6 +244,8 @@ async fn render_ui(
                         Cell::from("Avg"),
                         Cell::from("Max"),
                         Cell::from("Stddev"),
+                        Cell::from("P95"),
+                        Cell::from("P99"),
                     ])
                     .style(Style::default().fg(Color::Cyan)),
                 );
