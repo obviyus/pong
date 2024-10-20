@@ -10,6 +10,8 @@ env_logger = "0.11.5"
 futures = "0.3.31"
 log = "0.4.22"
 ratatui = "0.28.1"
-reqwest = "0.12.8"
+reqwest = { version = "0.12.8", features = [
+  "rustls-tls",
+], default-features = false }
 statrs = "0.17.1"
 tokio = { version = "1", features = ["full"] }
