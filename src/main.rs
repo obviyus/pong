@@ -1,3 +1,5 @@
+mod regions;
+
 use arraydeque::{ArrayDeque, Wrapping};
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -12,6 +14,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, Table},
     Terminal,
 };
+use regions::REGIONS_LIST;
 use reqwest::Client;
 use statrs::statistics::Statistics;
 use std::time::{Duration, Instant};
@@ -120,143 +123,7 @@ async fn start_fetching_latencies(
     client: Client,
     tx: mpsc::Sender<(String, Option<Duration>)>,
 ) -> Vec<JoinHandle<()>> {
-    // Links from https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints
-    let regions = [
-        (
-            "us-east-1 (Virginia)",
-            "https://dynamodb.us-east-1.amazonaws.com/ping",
-        ),
-        (
-            "us-east-2 (Ohio)",
-            "https://dynamodb.us-east-2.amazonaws.com/ping",
-        ),
-        (
-            "us-west-1 (California)",
-            "https://dynamodb.us-west-1.amazonaws.com/ping",
-        ),
-        (
-            "us-west-2 (Oregon)",
-            "https://dynamodb.us-west-2.amazonaws.com/ping",
-        ),
-        (
-            "ca-central-1 (Canada Central)",
-            "https://dynamodb.ca-central-1.amazonaws.com/ping",
-        ),
-        (
-            "ca-west-1 (Canada West)",
-            "https://dynamodb.ca-west-1.amazonaws.com/ping",
-        ),
-        (
-            "eu-west-1 (Ireland)",
-            "https://dynamodb.eu-west-1.amazonaws.com/ping",
-        ),
-        (
-            "eu-west-2 (London)",
-            "https://dynamodb.eu-west-2.amazonaws.com/ping",
-        ),
-        (
-            "eu-west-3 (Paris)",
-            "https://dynamodb.eu-west-3.amazonaws.com/ping",
-        ),
-        (
-            "eu-central-1 (Frankfurt)",
-            "https://dynamodb.eu-central-1.amazonaws.com/ping",
-        ),
-        (
-            "eu-central-2 (Zurich)",
-            "https://dynamodb.eu-central-2.amazonaws.com/ping",
-        ),
-        (
-            "eu-south-1 (Milan)",
-            "https://dynamodb.eu-south-1.amazonaws.com/ping",
-        ),
-        (
-            "eu-south-2 (Spain)",
-            "https://dynamodb.eu-south-2.amazonaws.com/ping",
-        ),
-        (
-            "eu-north-1 (Stockholm)",
-            "https://dynamodb.eu-north-1.amazonaws.com/ping",
-        ),
-        (
-            "il-central-1 (Israel)",
-            "https://dynamodb.il-central-1.amazonaws.com/ping",
-        ),
-        (
-            "me-south-1 (Bahrain)",
-            "https://dynamodb.me-south-1.amazonaws.com/ping",
-        ),
-        (
-            "me-central-1 (UAE)",
-            "https://streams.dynamodb.me-central-1.amazonaws.com/ping",
-        ),
-        (
-            "af-south-1 (Cape Town)",
-            "https://dynamodb.af-south-1.amazonaws.com/ping",
-        ),
-        (
-            "ap-east-1 (Hong Kong)",
-            "https://dynamodb.ap-east-1.amazonaws.com/ping",
-        ),
-        (
-            "ap-southeast-3 (Jakarta)",
-            "https://dynamodb.ap-southeast-3.amazonaws.com/ping",
-        ),
-        (
-            "ap-south-1 (Mumbai)",
-            "https://dynamodb.ap-south-1.amazonaws.com/ping",
-        ),
-        (
-            "ap-south-2 (Hyderabad)",
-            "https://dynamodb.ap-south-2.amazonaws.com/ping",
-        ),
-        (
-            "ap-northeast-3 (Osaka)",
-            "https://dynamodb.ap-northeast-3.amazonaws.com/ping",
-        ),
-        (
-            "ap-northeast-2 (Seoul)",
-            "https://dynamodb.ap-northeast-2.amazonaws.com/ping",
-        ),
-        (
-            "ap-southeast-1 (Singapore)",
-            "https://dynamodb.ap-southeast-1.amazonaws.com/ping",
-        ),
-        (
-            "ap-southeast-2 (Sydney)",
-            "https://dynamodb.ap-southeast-2.amazonaws.com/ping",
-        ),
-        (
-            "ap-southeast-4 (Melbourne)",
-            "https://dynamodb.ap-southeast-4.amazonaws.com/ping",
-        ),
-        (
-            "ap-northeast-1 (Tokyo)",
-            "https://dynamodb.ap-northeast-1.amazonaws.com/ping",
-        ),
-        (
-            "sa-east-1 (São Paulo)",
-            "https://dynamodb.sa-east-1.amazonaws.com/ping",
-        ),
-        (
-            "cn-north-1 (Beijing)",
-            "https://dynamodb.cn-north-1.amazonaws.com.cn/ping",
-        ),
-        (
-            "cn-northwest-1 (Ningxia)",
-            "https://dynamodb.cn-northwest-1.amazonaws.com.cn/ping",
-        ),
-        (
-            "us-gov-east-1",
-            "https://dynamodb.us-gov-east-1.amazonaws.com/ping",
-        ),
-        (
-            "us-gov-west-1",
-            "https://dynamodb.us-gov-west-1.amazonaws.com/ping",
-        ),
-    ];
-
-    regions
+    REGIONS_LIST
         .iter()
         .map(|(region, url)| {
             let client_clone = client.clone();
@@ -304,6 +171,7 @@ async fn render_ui(
 
                     Row::new(vec![
                         Cell::from(Span::styled(stat.region, Style::default().fg(Color::Green))),
+                        Cell::from(Span::styled(last_text, Style::default().fg(Color::Yellow))),
                         Cell::from(Span::styled(
                             latency_text,
                             Style::default().fg(Color::Yellow),
@@ -314,7 +182,6 @@ async fn render_ui(
                             stddev_text,
                             Style::default().fg(Color::Yellow),
                         )),
-                        Cell::from(Span::styled(last_text, Style::default().fg(Color::Yellow))),
                     ])
                 })
                 .collect();
@@ -337,11 +204,11 @@ async fn render_ui(
                 .header(
                     Row::new(vec![
                         Cell::from("Region"),
+                        Cell::from("Last"),
                         Cell::from("Min"),
                         Cell::from("Avg"),
                         Cell::from("Max"),
                         Cell::from("Stddev"),
-                        Cell::from("Last"),
                     ])
                     .style(Style::default().fg(Color::Cyan)),
                 );
@@ -364,41 +231,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::new();
 
-    let stats = Arc::new(Mutex::new(vec![
-        PingStats::new("us-east-1 (Virginia)"),
-        PingStats::new("us-east-2 (Ohio)"),
-        PingStats::new("us-west-1 (California)"),
-        PingStats::new("us-west-2 (Oregon)"),
-        PingStats::new("ca-central-1 (Canada Central)"),
-        PingStats::new("ca-west-1 (Canada West)"),
-        PingStats::new("eu-west-1 (Ireland)"),
-        PingStats::new("eu-west-2 (London)"),
-        PingStats::new("eu-west-3 (Paris)"),
-        PingStats::new("eu-central-1 (Frankfurt)"),
-        PingStats::new("eu-central-2 (Zurich)"),
-        PingStats::new("eu-south-1 (Milan)"),
-        PingStats::new("eu-south-2 (Spain)"),
-        PingStats::new("eu-north-1 (Stockholm)"),
-        PingStats::new("il-central-1 (Israel)"),
-        PingStats::new("me-south-1 (Bahrain)"),
-        PingStats::new("me-central-1 (UAE)"),
-        PingStats::new("af-south-1 (Cape Town)"),
-        PingStats::new("ap-east-1 (Hong Kong)"),
-        PingStats::new("ap-southeast-3 (Jakarta)"),
-        PingStats::new("ap-south-1 (Mumbai)"),
-        PingStats::new("ap-south-2 (Hyderabad)"),
-        PingStats::new("ap-northeast-3 (Osaka)"),
-        PingStats::new("ap-northeast-2 (Seoul)"),
-        PingStats::new("ap-southeast-1 (Singapore)"),
-        PingStats::new("ap-southeast-2 (Sydney)"),
-        PingStats::new("ap-southeast-4 (Melbourne)"),
-        PingStats::new("ap-northeast-1 (Tokyo)"),
-        PingStats::new("sa-east-1 (São Paulo)"),
-        PingStats::new("cn-north-1 (Beijing)"),
-        PingStats::new("cn-northwest-1 (Ningxia)"),
-        PingStats::new("us-gov-east-1"),
-        PingStats::new("us-gov-west-1"),
-    ]));
+    let stats = Arc::new(Mutex::new(
+        REGIONS_LIST
+            .iter()
+            .map(|(region, _)| PingStats::new(region))
+            .collect(),
+    ));
 
     let (tx, mut rx) = mpsc::channel(32);
 
