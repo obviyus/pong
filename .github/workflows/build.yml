@@ -87,6 +87,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
+          merge-multiple: true
 
       - uses: actions/setup-node@v4
         with:
@@ -98,13 +99,3 @@ jobs:
         run: |
           npm i -g semantic-release @semantic-release/changelog @semantic-release/git
           semantic-release
-
-      - name: Attach Build Artifacts
-        run: |
-          for file in ./artifacts/*; do
-            curl \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: $(file -b --mime-type "$file")" \
-              --data-binary @"$file" \
-              "$RELEASE_URL/assets?name=$(basename "$file")"
-          done
