@@ -25,6 +25,7 @@ use tokio::{
     time::sleep,
 };
 
+#[derive(Clone)]
 struct PingStats<'a> {
     region: &'a str,
     latencies: ArrayDeque<f64, 100, Wrapping>,
@@ -92,18 +93,18 @@ async fn ping_region(client: &Client, url: &str) -> Option<Duration> {
     }
 }
 
-async fn fetch_latency_for_region(
+async fn fetch_latency_for_region<'a>(
     client: Client,
-    region: String,
-    url: String,
-    tx: mpsc::Sender<(String, Option<Duration>)>,
+    region: &'a str,
+    url: &'a str,
+    tx: mpsc::Sender<(&'a str, Option<Duration>)>,
 ) {
     loop {
         let mut retries = 3;
         let mut latency;
 
         loop {
-            latency = ping_region(&client, &url).await;
+            latency = ping_region(&client, url).await;
             if latency.is_some() || retries == 0 {
                 break;
             }
@@ -111,7 +112,7 @@ async fn fetch_latency_for_region(
             sleep(Duration::from_millis(500)).await;
         }
 
-        if tx.send((region.clone(), latency)).await.is_err() {
+        if tx.send((region, latency)).await.is_err() {
             break; // Stop if the channel is closed
         }
 
@@ -121,16 +122,13 @@ async fn fetch_latency_for_region(
 
 async fn start_fetching_latencies(
     client: Client,
-    tx: mpsc::Sender<(String, Option<Duration>)>,
+    tx: mpsc::Sender<(&'static str, Option<Duration>)>,
 ) -> Vec<JoinHandle<()>> {
     REGIONS_LIST
         .iter()
         .map(|(region, url)| {
             let client_clone = client.clone();
             let tx_clone = tx.clone();
-            let region = region.to_string();
-            let url = url.to_string();
-
             tokio::spawn(fetch_latency_for_region(
                 client_clone,
                 region,
@@ -145,7 +143,10 @@ async fn render_ui(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     stats: Arc<Mutex<Vec<PingStats<'_>>>>,
 ) {
-    let stats = stats.lock().await;
+    let stats_copy: Vec<_> = {
+        let stats = stats.lock().await;
+        stats.clone()
+    };
 
     terminal
         .draw(|f| {
@@ -153,7 +154,7 @@ async fn render_ui(
                 .constraints([Constraint::Percentage(100)].as_ref())
                 .split(f.area());
 
-            let mut sorted_stats: Vec<_> = stats.iter().collect();
+            let mut sorted_stats: Vec<_> = stats_copy.iter().collect();
             sorted_stats.sort_by(|a, b| {
                 a.avg()
                     .partial_cmp(&b.avg())
@@ -163,19 +164,29 @@ async fn render_ui(
             let rows: Vec<Row> = sorted_stats
                 .iter()
                 .map(|stat| {
-                    let latency_text = format_latency_option(stat.min());
+                    let last_text = format_latency_option(stat.last());
                     let avg_text = format_latency_option(stat.avg());
+                    let min_text = format_latency_option(stat.min());
                     let max_text = format_latency_option(stat.max());
                     let stddev_text = format_latency_option(stat.stddev());
-                    let last_text = format_latency_option(stat.last());
+
+                    let last_value = stat.last();
+                    let avg_value = stat.avg();
+
+                    let last_style = if let (Some(last), Some(avg)) = (last_value, avg_value) {
+                        if last > avg {
+                            Style::default().fg(Color::Red) // Worse performance
+                        } else {
+                            Style::default().fg(Color::Green) // Better performance
+                        }
+                    } else {
+                        Style::default().fg(Color::Yellow)
+                    };
 
                     Row::new(vec![
-                        Cell::from(Span::styled(stat.region, Style::default().fg(Color::Green))),
-                        Cell::from(Span::styled(last_text, Style::default().fg(Color::Yellow))),
-                        Cell::from(Span::styled(
-                            latency_text,
-                            Style::default().fg(Color::Yellow),
-                        )),
+                        Cell::from(Span::styled(stat.region, Style::default().fg(Color::White))),
+                        Cell::from(Span::styled(last_text, last_style)),
+                        Cell::from(Span::styled(min_text, Style::default().fg(Color::Yellow))),
                         Cell::from(Span::styled(avg_text, Style::default().fg(Color::Yellow))),
                         Cell::from(Span::styled(max_text, Style::default().fg(Color::Yellow))),
                         Cell::from(Span::styled(
@@ -203,7 +214,7 @@ async fn render_ui(
                 )
                 .header(
                     Row::new(vec![
-                        Cell::from("Region"),
+                        Cell::from("AWS Region"),
                         Cell::from("Last"),
                         Cell::from("Min"),
                         Cell::from("Avg"),
