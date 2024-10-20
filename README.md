@@ -1,6 +1,6 @@
 # pong
 
-![pong-demo](assets/pong-demo.jpg)
+![pong-demo](assets/pong-demo.avif)
 
 Pong is a simple CLI program that I use to ping different AWS regions. It's written in Rust and uses the `ratatui` library for for TUI.
 
