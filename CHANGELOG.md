@@ -1,3 +1,10 @@
+## [1.0.4](https://github.com/obviyus/pong/compare/v1.0.3...v1.0.4) (2024-10-21)
+
+
+### Bug Fixes
+
+* debug prints for binaries ([283774c](https://github.com/obviyus/pong/commit/283774c366235b2dfe6edcb2406ecbf2df81711f))
+
 ## [1.0.3](https://github.com/obviyus/pong/compare/v1.0.2...v1.0.3) (2024-10-21)
 
 
