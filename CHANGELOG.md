@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/obviyus/pong/compare/v1.0.2...v1.0.3) (2024-10-21)
+
+
+### Bug Fixes
+
+* hardcode semantic release artifact paths ([c960cc5](https://github.com/obviyus/pong/commit/c960cc57f20df39b05e12dcf89f4363dca637939))
+
 ## [1.0.2](https://github.com/obviyus/pong/compare/v1.0.1...v1.0.2) (2024-10-21)
 
 
