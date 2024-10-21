@@ -15,12 +15,16 @@ jobs:
         include:
           - runs-on: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            artifact_name: pong-x86_64-linux
           - runs-on: ubuntu-latest
             target: aarch64-unknown-linux-gnu
+            artifact_name: pong-aarch64-linux
           - runs-on: macos-latest
             target: x86_64-apple-darwin
+            artifact_name: pong-x86_64-macos
           - runs-on: macos-latest
             target: aarch64-apple-darwin
+            artifact_name: pong-aarch64-macos
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout code
@@ -60,11 +64,15 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Rename binary
+        run: |
+          mv target/${{ matrix.target }}/release/pong target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pong-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/pong
+          name: ${{ matrix.artifact_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
           if-no-files-found: error
 
   release:
@@ -81,7 +89,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-          pattern: pong-*
 
       - name: Display structure of downloaded files
         run: |

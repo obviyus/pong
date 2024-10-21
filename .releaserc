@@ -12,19 +12,19 @@
       {
         "assets": [
           {
-            "path": "./artifacts/pong-x86_64-unknown-linux-gnu/pong",
+            "path": "./artifacts/pong-x86_64-linux/pong-x86_64-linux",
             "label": "Linux x86_64 Binary"
           },
           {
-            "path": "./artifacts/pong-aarch64-unknown-linux-gnu/pong",
+            "path": "./artifacts/pong-aarch64-linux/pong-aarch64-linux",
             "label": "Linux ARM64 Binary"
           },
           {
-            "path": "./artifacts/pong-x86_64-apple-darwin/pong",
+            "path": "./artifacts/pong-x86_64-macos/pong-x86_64-macos",
             "label": "macOS x86_64 Binary"
           },
           {
-            "path": "./artifacts/pong-aarch64-apple-darwin/pong",
+            "path": "./artifacts/pong-aarch64-macos/pong-aarch64-macos",
             "label": "macOS ARM64 Binary"
           }
         ]
