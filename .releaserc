@@ -12,16 +12,16 @@
       {
         "assets": [
           {
-            "path": "./artifacts/pong-x86_64-linux/pong-x86_64-linux"
+            "path": "./artifacts/pong-linux-x86_64/pong-linux-x86_64"
           },
           {
-            "path": "./artifacts/pong-aarch64-linux/pong-aarch64-linux"
+            "path": "./artifacts/pong-linux-aarch64/pong-linux-aarch64"
           },
           {
-            "path": "./artifacts/pong-x86_64-macos/pong-x86_64-macos"
+            "path": "./artifacts/pong-macos-x86_64/pong-macos-x86_64"
           },
           {
-            "path": "./artifacts/pong-aarch64-macos/pong-aarch64-macos"
+            "path": "./artifacts/pong-macos-aarch64/pong-macos-aarch64"
           }
         ]
       }
