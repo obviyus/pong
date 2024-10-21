@@ -82,7 +82,6 @@ jobs:
         with:
           path: ./artifacts
           pattern: pong-*
-          merge-multiple: true
 
       - name: Display structure of downloaded files
         run: |
