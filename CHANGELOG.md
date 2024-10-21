@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/obviyus/pong/compare/v1.0.0...v1.0.1) (2024-10-21)
+
+
+### Bug Fixes
+
+* commit to trigger release ([a8702ff](https://github.com/obviyus/pong/commit/a8702ff50d99a23379f04f63e6dc4d2c250d6b4e))
+
 # 1.0.0 (2024-10-20)
 
 
