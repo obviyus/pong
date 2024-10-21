@@ -1,3 +1,10 @@
+## [1.0.5](https://github.com/obviyus/pong/compare/v1.0.4...v1.0.5) (2024-10-21)
+
+
+### Bug Fixes
+
+* remove merge multiple ([84292e1](https://github.com/obviyus/pong/commit/84292e1a7f908b9828a46f3a78757e4ed59dffe7))
+
 ## [1.0.4](https://github.com/obviyus/pong/compare/v1.0.3...v1.0.4) (2024-10-21)
 
 
