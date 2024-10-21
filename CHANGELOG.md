@@ -1,3 +1,10 @@
+## [1.0.6](https://github.com/obviyus/pong/compare/v1.0.5...v1.0.6) (2024-10-21)
+
+
+### Bug Fixes
+
+* hardcoded binary paths ([964e4b8](https://github.com/obviyus/pong/commit/964e4b8e903102b17ce813c12379e8beebd979dd))
+
 ## [1.0.5](https://github.com/obviyus/pong/compare/v1.0.4...v1.0.5) (2024-10-21)
 
 
