@@ -1,3 +1,10 @@
+## [1.0.9](https://github.com/obviyus/pong/compare/v1.0.8...v1.0.9) (2024-10-21)
+
+
+### Bug Fixes
+
+* rename binaries for release ([e2e1fac](https://github.com/obviyus/pong/commit/e2e1facb01cf3980a5953ad5592e1c164b4f5d86))
+
 ## [1.0.8](https://github.com/obviyus/pong/compare/v1.0.7...v1.0.8) (2024-10-21)
 
 
