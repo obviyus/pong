@@ -10,19 +10,18 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
         include:
-          - os: ubuntu-latest
+          - runs-on: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
+          - runs-on: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-          - os: macos-latest
+          - runs-on: macos-latest
             target: x86_64-apple-darwin
-          - os: macos-latest
+          - runs-on: macos-latest
             target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -32,39 +31,31 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          target: ${{ matrix.target }}
           components: rustfmt, clippy
           override: true
 
-      - name: Install target for cross-compilation
-        run: rustup target add ${{ matrix.target }}
-
       - name: Install cross-compilation tools for ARM (Linux only)
-        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
+        if: matrix.runs-on == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Cache Cargo registry
         uses: actions/cache@v3
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache Cargo index
         uses: actions/cache@v3
         with:
           path: ~/.cargo/index
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache Cargo build
         uses: actions/cache@v3
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-${{ matrix.target }}-
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -80,7 +71,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - name: Checkout code
