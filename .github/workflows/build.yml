@@ -93,9 +93,6 @@ jobs:
           pattern: pong-*
           merge-multiple: true
 
-      - name: Display structure of downloaded files
-        run: ls -R ./artifacts
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
