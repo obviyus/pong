@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/obviyus/pong/compare/v1.0.1...v1.0.2) (2024-10-21)
+
+
+### Bug Fixes
+
+* dummy commit to trigger CI ([8a9ac02](https://github.com/obviyus/pong/commit/8a9ac0243fe0c8d9903138437c32f78b2d4a8d37))
+
 ## [1.0.1](https://github.com/obviyus/pong/compare/v1.0.0...v1.0.1) (2024-10-21)
 
 
