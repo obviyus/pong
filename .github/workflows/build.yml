@@ -15,16 +15,16 @@ jobs:
         include:
           - runs-on: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: pong-x86_64-linux
+            artifact_name: pong-linux-x86_64
           - runs-on: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact_name: pong-aarch64-linux
+            artifact_name: pong-linux-aarch64
           - runs-on: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: pong-x86_64-macos
+            artifact_name: pong-macos-x86_64
           - runs-on: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: pong-aarch64-macos
+            artifact_name: pong-macos-aarch64
     runs-on: ${{ matrix.runs-on }}
     steps:
       - name: Checkout code
@@ -89,11 +89,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-
-      - name: Display structure of downloaded files
-        run: |
-          echo "Contents of ./artifacts:"
-          ls -R ./artifacts
 
       - uses: actions/setup-node@v4
         with:
