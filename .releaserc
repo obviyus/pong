@@ -12,20 +12,8 @@
       {
         "assets": [
           {
-            "path": "artifacts/pong-x86_64-unknown-linux-gnu",
-            "label": "Linux x86_64 Binary"
-          },
-          {
-            "path": "artifacts/pong-aarch64-unknown-linux-gnu",
-            "label": "Linux ARM64 Binary"
-          },
-          {
-            "path": "artifacts/pong-x86_64-apple-darwin",
-            "label": "macOS x86_64 Binary"
-          },
-          {
-            "path": "artifacts/pong-aarch64-apple-darwin",
-            "label": "macOS ARM64 Binary"
+            "path": "./artifacts/pong-*",
+            "label": "Binary"
           }
         ]
       }
