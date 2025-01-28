@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/obviyus/pong/compare/v1.0.9...v1.1.0) (2025-01-28)
+
+
+### Features
+
+* refactor and move PingStats to a new module with improved statistics caching ([2b8dc12](https://github.com/obviyus/pong/commit/2b8dc1230e101007e8f11c04fdd0e4014342f739))
+
 ## [1.0.9](https://github.com/obviyus/pong/compare/v1.0.8...v1.0.9) (2024-10-21)
 
 
