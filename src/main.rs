@@ -1,6 +1,7 @@
 mod regions;
+mod stats;
 
-use arraydeque::{ArrayDeque, Wrapping};
+use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -16,81 +17,17 @@ use ratatui::{
 };
 use regions::REGIONS_LIST;
 use reqwest::Client;
-use statrs::statistics::{Data, OrderStatistics, Statistics};
-use std::time::{Duration, Instant};
-use std::{io::stdout, sync::Arc};
+use stats::PingStats;
+use std::{
+    io::stdout,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{
     sync::{mpsc, Mutex},
     task::JoinHandle,
     time::sleep,
 };
-
-#[derive(Clone)]
-struct PingStats<'a> {
-    region: &'a str,
-    latencies: ArrayDeque<f64, 100, Wrapping>,
-}
-
-impl<'a> PingStats<'a> {
-    fn new(region: &'a str) -> Self {
-        PingStats {
-            region,
-            latencies: ArrayDeque::new(),
-        }
-    }
-
-    fn add_latency(&mut self, latency: Option<Duration>) {
-        if let Some(lat) = latency {
-            self.latencies.push_back(lat.as_secs_f64() * 1000.0);
-        }
-    }
-
-    fn min(&self) -> Option<f64> {
-        self.latencies.iter().copied().reduce(f64::min)
-    }
-
-    fn max(&self) -> Option<f64> {
-        self.latencies.iter().copied().reduce(f64::max)
-    }
-
-    fn avg(&self) -> Option<f64> {
-        if self.latencies.is_empty() {
-            None
-        } else {
-            Some(self.latencies.iter().copied().mean())
-        }
-    }
-
-    fn stddev(&self) -> Option<f64> {
-        if self.latencies.len() > 1 {
-            Some(self.latencies.iter().copied().std_dev())
-        } else {
-            None
-        }
-    }
-
-    fn last(&self) -> Option<f64> {
-        self.latencies.iter().last().copied()
-    }
-
-    fn p95(&self) -> Option<f64> {
-        if self.latencies.is_empty() {
-            None
-        } else {
-            let mut data = Data::new(self.latencies.iter().copied().collect::<Vec<_>>());
-            Some(data.percentile(95))
-        }
-    }
-
-    fn p99(&self) -> Option<f64> {
-        if self.latencies.is_empty() {
-            None
-        } else {
-            let mut data = Data::new(self.latencies.iter().copied().collect::<Vec<_>>());
-            Some(data.percentile(99))
-        }
-    }
-}
 
 fn format_latency_option(value: Option<f64>) -> String {
     value
@@ -161,10 +98,8 @@ async fn render_ui(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     stats: Arc<Mutex<Vec<PingStats<'_>>>>,
 ) {
-    let stats_copy: Vec<_> = {
-        let stats = stats.lock().await;
-        stats.clone()
-    };
+    // Lock stats only once and collect references
+    let stats_guard = stats.lock().await;
 
     terminal
         .draw(|f| {
@@ -172,7 +107,8 @@ async fn render_ui(
                 .constraints([Constraint::Percentage(100)].as_ref())
                 .split(f.area());
 
-            let mut sorted_stats: Vec<_> = stats_copy.iter().collect();
+            // Create a vector of references for sorting
+            let mut sorted_stats: Vec<&PingStats> = stats_guard.iter().collect();
             sorted_stats.sort_by(|a, b| {
                 a.avg()
                     .partial_cmp(&b.avg())
@@ -272,7 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         REGIONS_LIST
             .iter()
             .map(|(region, _)| PingStats::new(region))
-            .collect(),
+            .collect::<Vec<_>>(),
     ));
 
     let (tx, mut rx) = mpsc::channel(32);
@@ -314,6 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for handle in handles {
         handle.abort();
+        let _ = handle.await;
     }
 
     disable_raw_mode()?;
@@ -323,5 +260,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     terminal.show_cursor()?;
 
-    Ok(())
+    std::process::exit(0)
 }
