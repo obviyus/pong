@@ -19,6 +19,7 @@ use regions::REGIONS_LIST;
 use reqwest::Client;
 use stats::PingStats;
 use std::{
+    collections::HashMap,
     io::stdout,
     sync::Arc,
     time::{Duration, Instant},
@@ -29,10 +30,13 @@ use tokio::{
     time::sleep,
 };
 
+// AIDEV-NOTE: Inline helper for consistent string formatting
+#[inline]
 fn format_latency_option(value: Option<f64>) -> String {
-    value
-        .map(|v| format!("{:.2} ms", v))
-        .unwrap_or("--".to_string())
+    match value {
+        Some(v) => format!("{:.2} ms", v),
+        None => "--".to_string(),
+    }
 }
 
 async fn ping_region(client: &Client, url: &str) -> Option<Duration> {
@@ -94,12 +98,49 @@ async fn start_fetching_latencies(
         .collect()
 }
 
+// AIDEV-NOTE: Pre-allocated buffer for sorting indices to avoid allocations
+struct RenderBuffers {
+    sorted_indices: Vec<usize>,
+}
+
+impl RenderBuffers {
+    fn new(capacity: usize) -> Self {
+        Self {
+            sorted_indices: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.sorted_indices.clear();
+    }
+}
+
 async fn render_ui(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     stats: Arc<Mutex<Vec<PingStats<'_>>>>,
+    buffers: &mut RenderBuffers,
 ) {
-    // Lock stats only once and collect references
-    let stats_guard = stats.lock().await;
+    // AIDEV-NOTE: Minimize lock time by cloning only the data we need
+    let stats_snapshot: Vec<_> = {
+        let stats_guard = stats.lock().await;
+        stats_guard
+            .iter()
+            .enumerate()
+            .map(|(i, stat)| {
+                (
+                    i,
+                    stat.region,
+                    stat.last(),
+                    stat.avg(),
+                    stat.min(),
+                    stat.max(),
+                    stat.stddev(),
+                    stat.p95(),
+                    stat.p99(),
+                )
+            })
+            .collect()
+    };
 
     terminal
         .draw(|f| {
@@ -107,50 +148,60 @@ async fn render_ui(
                 .constraints([Constraint::Percentage(100)].as_ref())
                 .split(f.area());
 
-            // Create a vector of references for sorting
-            let mut sorted_stats: Vec<&PingStats> = stats_guard.iter().collect();
-            sorted_stats.sort_by(|a, b| {
-                a.avg()
-                    .partial_cmp(&b.avg())
+            // AIDEV-NOTE: Sort indices instead of references to avoid allocations
+            buffers.clear();
+            buffers.sorted_indices.extend(0..stats_snapshot.len());
+            buffers.sorted_indices.sort_by(|&a, &b| {
+                stats_snapshot[a]
+                    .3 // avg field
+                    .partial_cmp(&stats_snapshot[b].3)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
 
-            let rows: Vec<Row> = sorted_stats
+            let rows: Vec<Row> = buffers
+                .sorted_indices
                 .iter()
-                .map(|stat| {
-                    let last_text = format_latency_option(stat.last());
-                    let avg_text = format_latency_option(stat.avg());
-                    let min_text = format_latency_option(stat.min());
-                    let max_text = format_latency_option(stat.max());
-                    let stddev_text = format_latency_option(stat.stddev());
-                    let p95_text = format_latency_option(stat.p95());
-                    let p99_text = format_latency_option(stat.p99());
+                .map(|&idx| {
+                    let (_, region, last, avg, min, max, stddev, p95, p99) = &stats_snapshot[idx];
 
-                    let last_value = stat.last();
-                    let avg_value = stat.avg();
-
-                    let last_style = if let (Some(last), Some(avg)) = (last_value, avg_value) {
-                        if last > avg {
-                            Style::default().fg(Color::Red) // Worse performance
+                    let last_style = if let (Some(last_val), Some(avg_val)) = (last, avg) {
+                        if last_val > avg_val {
+                            Style::default().fg(Color::Red)
                         } else {
-                            Style::default().fg(Color::Green) // Better performance
+                            Style::default().fg(Color::Green)
                         }
                     } else {
                         Style::default().fg(Color::Yellow)
                     };
 
+                    // AIDEV-NOTE: Use helper function for consistent formatting
                     Row::new(vec![
-                        Cell::from(Span::styled(stat.region, Style::default().fg(Color::White))),
-                        Cell::from(Span::styled(last_text, last_style)),
-                        Cell::from(Span::styled(min_text, Style::default().fg(Color::Yellow))),
-                        Cell::from(Span::styled(avg_text, Style::default().fg(Color::Yellow))),
-                        Cell::from(Span::styled(max_text, Style::default().fg(Color::Yellow))),
+                        Cell::from(Span::styled(*region, Style::default().fg(Color::White))),
+                        Cell::from(Span::styled(format_latency_option(*last), last_style)),
                         Cell::from(Span::styled(
-                            stddev_text,
+                            format_latency_option(*min),
                             Style::default().fg(Color::Yellow),
                         )),
-                        Cell::from(Span::styled(p95_text, Style::default().fg(Color::Yellow))),
-                        Cell::from(Span::styled(p99_text, Style::default().fg(Color::Yellow))),
+                        Cell::from(Span::styled(
+                            format_latency_option(*avg),
+                            Style::default().fg(Color::Yellow),
+                        )),
+                        Cell::from(Span::styled(
+                            format_latency_option(*max),
+                            Style::default().fg(Color::Yellow),
+                        )),
+                        Cell::from(Span::styled(
+                            format_latency_option(*stddev),
+                            Style::default().fg(Color::Yellow),
+                        )),
+                        Cell::from(Span::styled(
+                            format_latency_option(*p95),
+                            Style::default().fg(Color::Yellow),
+                        )),
+                        Cell::from(Span::styled(
+                            format_latency_option(*p99),
+                            Style::default().fg(Color::Yellow),
+                        )),
                     ])
                 })
                 .collect();
@@ -204,6 +255,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::new();
 
+    // AIDEV-NOTE: Create region lookup map for O(1) access instead of O(n) search
+    let region_to_index: HashMap<&'static str, usize> = REGIONS_LIST
+        .iter()
+        .enumerate()
+        .map(|(i, (region, _))| (*region, i))
+        .collect();
+
     let stats = Arc::new(Mutex::new(
         REGIONS_LIST
             .iter()
@@ -228,16 +286,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut interval = tokio::time::interval(Duration::from_millis(100));
     let mut exit = false;
+    let mut render_buffers = RenderBuffers::new(REGIONS_LIST.len());
 
     while !exit {
         tokio::select! {
             _ = interval.tick() => {
-                render_ui(&mut terminal, Arc::clone(&stats)).await;
+                render_ui(&mut terminal, Arc::clone(&stats), &mut render_buffers).await;
             }
             Some((region, latency)) = rx.recv() => {
-                let mut stats = stats.lock().await;
-                if let Some(stat) = stats.iter_mut().find(|stat| stat.region == region) {
-                    stat.add_latency(latency);
+                // AIDEV-NOTE: Use HashMap lookup instead of linear search
+                if let Some(&index) = region_to_index.get(region) {
+                    let mut stats = stats.lock().await;
+                    stats[index].add_latency(latency);
                 }
             }
             Some(key_event) = event_rx.recv() => {
