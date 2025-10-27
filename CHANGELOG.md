@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/obviyus/pong/compare/v1.4.0...v1.5.0) (2025-10-27)
+
+
+### Bug Fixes
+
+* iterate over the slice shared_stats, not the fixed array ([0e7177a](https://github.com/obviyus/pong/commit/0e7177a697c411b6ae32cf1beb86851c8ba97055))
+
+
+### Features
+
+* fold region stats initialization together with thread spawning ([728f133](https://github.com/obviyus/pong/commit/728f133b26acb3eb29eb531227e99709efb4a0ce))
+
 # [1.4.0](https://github.com/obviyus/pong/compare/v1.3.0...v1.4.0) (2025-10-27)
 
 
