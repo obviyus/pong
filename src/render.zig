@@ -203,6 +203,93 @@ pub fn render(
     try vx.render(tty.writer());
 }
 
+pub fn renderWarmup(
+    vx: *vaxis.Vaxis,
+    tty: *vaxis.Tty,
+    elapsed_ns: u64,
+    remaining_ns: u64,
+    total_seconds: u64,
+) !void {
+    const spinner_frames = [_][]const u8{ "-", "\\", "|", "/" };
+    const spinner_period_ns: u64 = 150 * std.time.ns_per_ms;
+    const frame_index: usize = if (spinner_period_ns == 0)
+        0
+    else
+        @intCast((elapsed_ns / spinner_period_ns) % spinner_frames.len);
+    const spinner = spinner_frames[frame_index];
+
+    var message_buf: [64]u8 = undefined;
+    const message = try std.fmt.bufPrint(&message_buf, "{s} {s}", .{ spinner, "Warming up..." });
+
+    const remaining_seconds = if (remaining_ns == 0)
+        0
+    else
+        (remaining_ns + std.time.ns_per_s - 1) / std.time.ns_per_s;
+
+    const countdown_width = digitCount(total_seconds);
+
+    var remaining_buf: [16]u8 = undefined;
+    const remaining_raw = try std.fmt.bufPrint(&remaining_buf, "{d}", .{remaining_seconds});
+
+    var padded_number: [32]u8 = undefined;
+    const pad_len = if (countdown_width > remaining_raw.len)
+        countdown_width - remaining_raw.len
+    else
+        0;
+    if (pad_len > 0) {
+        @memset(padded_number[0..pad_len], ' ');
+    }
+    std.mem.copyForwards(u8, padded_number[pad_len .. pad_len + remaining_raw.len], remaining_raw);
+    const padded_slice = padded_number[0 .. pad_len + remaining_raw.len];
+
+    var countdown_buf: [64]u8 = undefined;
+    const countdown = try std.fmt.bufPrint(&countdown_buf, "{s}s remaining", .{padded_slice});
+
+    const win = vx.window();
+    win.clear();
+    win.hideCursor();
+    win.fill(.{ .default = true });
+
+    if (win.height == 0 or win.width == 0) {
+        try vx.render(tty.writer());
+        return;
+    }
+
+    const row_center: u16 = @intCast(win.height / 2);
+    const col_message: u16 = @intCast(if (win.width > message.len) (win.width - message.len) / 2 else 0);
+    const col_countdown: u16 = @intCast(if (win.width > countdown.len) (win.width - countdown.len) / 2 else 0);
+
+    _ = win.print(&.{
+        .{ .text = message, .style = palette.header },
+    }, .{
+        .row_offset = row_center,
+        .col_offset = col_message,
+        .wrap = .none,
+    });
+
+    if (row_center + 1 < win.height) {
+        _ = win.print(&.{
+            .{ .text = countdown, .style = palette.text },
+        }, .{
+            .row_offset = row_center + 1,
+            .col_offset = col_countdown,
+            .wrap = .none,
+        });
+    }
+
+    try vx.render(tty.writer());
+}
+
+fn digitCount(value: u64) usize {
+    var n = value;
+    var count: usize = 1;
+    while (n >= 10) {
+        n /= 10;
+        count += 1;
+    }
+    return count;
+}
+
 fn CompareIndexByAvg(comptime SharedStatType: type) type {
     return struct {
         fn less(ctx: SortContext(SharedStatType), lhs: usize, rhs: usize) bool {
