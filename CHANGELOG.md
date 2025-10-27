@@ -1,3 +1,16 @@
+# [1.4.0](https://github.com/obviyus/pong/compare/v1.3.0...v1.4.0) (2025-10-27)
+
+
+### Bug Fixes
+
+* do not include warmup samples in display ([46fb1d4](https://github.com/obviyus/pong/commit/46fb1d4de9b2dd66ca200817a94f9634201aaceb))
+
+
+### Features
+
+* add --help flag ([f5e2c59](https://github.com/obviyus/pong/commit/f5e2c592e9054759d74280dc15e1e34eb36790ab))
+* warmup loading spinner ([d723650](https://github.com/obviyus/pong/commit/d7236501b80dc4fe67432ed0e95ab43eb13ac149))
+
 # [1.3.0](https://github.com/obviyus/pong/compare/v1.2.0...v1.3.0) (2025-10-27)
 
 
