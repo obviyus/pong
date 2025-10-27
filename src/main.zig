@@ -125,13 +125,10 @@ pub fn main() !void {
 
     loop.postEvent(.data_update);
 
-    var frame_arena = std.heap.ArenaAllocator.init(allocator);
-    defer frame_arena.deinit();
     var snapshots_buffer: [regions.region_count]RegionSnapshot = undefined;
 
     var running = true;
     while (running) {
-        defer _ = frame_arena.reset(.retain_capacity);
         const event = loop.nextEvent();
         var needs_render = false;
 
@@ -151,7 +148,7 @@ pub fn main() !void {
 
         if (needs_render and running) {
             const snapshots = collectSnapshots(shared_stats, snapshots_buffer[0..]);
-            try render(&vx, &tty, snapshots, frame_arena.allocator());
+            try render(&vx, &tty, snapshots);
         }
     }
 }
@@ -245,8 +242,9 @@ fn render(
     vx: *vaxis.Vaxis,
     tty: *vaxis.Tty,
     snapshots: []const RegionSnapshot,
-    allocator: std.mem.Allocator,
 ) !void {
+    var formatted_cache: [regions.region_count][7][16]u8 = undefined;
+
     const win = vx.window();
     win.clear();
 
@@ -291,13 +289,15 @@ fn render(
         });
 
         const last_style = styleForLast(snapshot.last, snapshot.avg);
-        const last_text = try formatLatency(allocator, snapshot.last);
-        const min_text = try formatLatency(allocator, snapshot.min);
-        const avg_text = try formatLatency(allocator, snapshot.avg);
-        const max_text = try formatLatency(allocator, snapshot.max);
-        const stddev_text = try formatLatency(allocator, snapshot.stddev);
-        const p95_text = try formatLatency(allocator, snapshot.p95);
-        const p99_text = try formatLatency(allocator, snapshot.p99);
+        const row_buffers = &formatted_cache[i];
+
+        const last_text = try formatLatency(snapshot.last, &row_buffers[0]);
+        const min_text = try formatLatency(snapshot.min, &row_buffers[1]);
+        const avg_text = try formatLatency(snapshot.avg, &row_buffers[2]);
+        const max_text = try formatLatency(snapshot.max, &row_buffers[3]);
+        const stddev_text = try formatLatency(snapshot.stddev, &row_buffers[4]);
+        const p95_text = try formatLatency(snapshot.p95, &row_buffers[5]);
+        const p99_text = try formatLatency(snapshot.p99, &row_buffers[6]);
 
         const values = [_]struct {
             text: []const u8,
@@ -337,11 +337,11 @@ fn render(
     try vx.render(tty.writer());
 }
 
-fn formatLatency(allocator: std.mem.Allocator, value: ?f64) ![]const u8 {
+fn formatLatency(value: ?f64, buf: *[16]u8) ![]const u8 {
     if (value) |latency| {
-        return std.fmt.allocPrint(allocator, "{d:>6.2} ms", .{latency});
+        return std.fmt.bufPrint(buf, "{d:>6.2} ms", .{latency});
     }
-    return allocator.dupe(u8, "--");
+    return "--";
 }
 
 fn sleepWithShutdown(flag: *std.atomic.Value(bool), total_ns: u64) void {
