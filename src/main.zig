@@ -248,6 +248,7 @@ fn render(
     sorted_indices: []const usize,
 ) !void {
     var formatted_cache: [regions.region_count][7][16]u8 = undefined;
+    var header_cache: [column_labels.len][32]u8 = undefined;
 
     const win = vx.window();
     win.clear();
@@ -267,8 +268,13 @@ fn render(
     }
 
     for (column_labels, 0..) |label, idx| {
+        const label_text = if (idx == 0)
+            label
+        else
+            rightAlignedLabel(&header_cache[idx], label, column_widths[idx]);
+
         _ = table.print(&.{
-            .{ .text = label, .style = palette.header },
+            .{ .text = label_text, .style = palette.header },
         }, .{
             .row_offset = 0,
             .col_offset = column_offsets[idx],
@@ -409,6 +415,24 @@ fn compareIndexByAvg(ctx: SortContext, lhs: usize, rhs: usize) bool {
     const lhs_region = ctx.shared_stats[lhs].data.region;
     const rhs_region = ctx.shared_stats[rhs].data.region;
     return mem.lessThan(u8, lhs_region, rhs_region);
+}
+
+fn rightAlignedLabel(buf: *[32]u8, label: []const u8, width: u16) []const u8 {
+    const target_width: usize = @min(buf.len, @as(usize, width));
+
+    if (label.len >= target_width) {
+        const copy_len = @min(label.len, buf.len);
+        mem.copyForwards(u8, buf[0..copy_len], label[0..copy_len]);
+        return buf[0..copy_len];
+    }
+
+    const padding = target_width - label.len;
+    var pad_idx: usize = 0;
+    while (pad_idx < padding) : (pad_idx += 1) {
+        buf[pad_idx] = ' ';
+    }
+    mem.copyForwards(u8, buf[padding .. padding + label.len], label);
+    return buf[0..target_width];
 }
 
 fn calcColumnOffsets() [column_labels.len]u16 {
