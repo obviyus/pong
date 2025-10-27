@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/obviyus/pong/compare/v1.2.0...v1.3.0) (2025-10-27)
+
+
+### Features
+
+* warmup time arg ([c9eb6da](https://github.com/obviyus/pong/commit/c9eb6dac9710721f9d57f8bd837a690bea61f212))
+
 # [1.2.0](https://github.com/obviyus/pong/compare/v1.1.0...v1.2.0) (2025-10-27)
 
 
