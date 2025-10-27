@@ -48,7 +48,7 @@ jobs:
             ${{ runner.os }}-zig-
 
       - name: Build
-        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
 
       - name: Prepare artifact
         run: |
