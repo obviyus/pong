@@ -91,7 +91,7 @@ pub fn main() !void {
         }
     }
 
-    for (shared_stats_storage, regions.REGIONS_LIST, 0..) |*shared, region, idx| {
+    for (shared_stats, regions.REGIONS_LIST, 0..) |*shared, region, idx| {
         shared.* = .{ .data = PingStats.init(region.name) };
         const ctx = WorkerContext{
             .region = region,
