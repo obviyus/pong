@@ -1,3 +1,18 @@
+# [1.2.0](https://github.com/obviyus/pong/compare/v1.1.0...v1.2.0) (2025-10-27)
+
+
+### Bug Fixes
+
+* remove -zig suffix ([ef58833](https://github.com/obviyus/pong/commit/ef588335c3ef102c2c2719ae027c1e7df2837342))
+
+
+### Features
+
+* eliminate render-frama arena ([3668aca](https://github.com/obviyus/pong/commit/3668aca4a1e31d1615c262295b14de6011dd2553))
+* right align headers in table ([3f51f78](https://github.com/obviyus/pong/commit/3f51f78d9a130d81d8f3b4d179b873dc7b75c9c7))
+* store and show sample count for a run ([f7cb224](https://github.com/obviyus/pong/commit/f7cb2247b82a7be40fad4b5d7e32027005f6901b))
+* use a sorted index vuffer instead of a per frame snapshot ([5aaac32](https://github.com/obviyus/pong/commit/5aaac3224553f15035b153ea85d37a26ffc7ae5e))
+
 # [1.1.0](https://github.com/obviyus/pong/compare/v1.0.9...v1.1.0) (2025-01-28)
 
 
