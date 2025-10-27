@@ -44,33 +44,32 @@ pub const PingStats = struct {
     }
 
     pub fn min(self: *PingStats) ?f64 {
-        if (self.len == 0) return null;
-        return self.ensureStats().min;
+        return self.stat("min");
     }
 
     pub fn max(self: *PingStats) ?f64 {
-        if (self.len == 0) return null;
-        return self.ensureStats().max;
+        return self.stat("max");
     }
 
     pub fn avg(self: *PingStats) ?f64 {
-        if (self.len == 0) return null;
-        return self.ensureStats().avg;
+        return self.stat("avg");
     }
 
     pub fn stddev(self: *PingStats) ?f64 {
-        if (self.len == 0) return null;
-        return self.ensureStats().stddev;
+        return self.stat("stddev");
     }
 
     pub fn p95(self: *PingStats) ?f64 {
-        if (self.len == 0) return null;
-        return self.ensureStats().p95;
+        return self.stat("p95");
     }
 
     pub fn p99(self: *PingStats) ?f64 {
+        return self.stat("p99");
+    }
+
+    inline fn stat(self: *PingStats, comptime field: []const u8) ?f64 {
         if (self.len == 0) return null;
-        return self.ensureStats().p99;
+        return @field(self.ensureStats(), field);
     }
 
     fn ensureStats(self: *PingStats) CachedStats {
