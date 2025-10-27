@@ -134,41 +134,36 @@ pub fn main() !void {
             needs_render = true;
         }
 
-        if (!warmup_ready and warmup_timer.read() >= warmup_ns) {
-            warmup_ready = true;
-            collect_samples.store(true, .release);
-            needs_render = true;
-        }
+        if (!needs_render or !running) continue;
 
-        if (needs_render and running and warmup_ready) {
-            const sorted_indices = renderer.collectSortedIndices(SharedStat, shared_stats, sorted_index_buffer[0..]);
-            try renderer.render(SharedStat, &vx, &tty, shared_stats, sorted_indices);
-        }
-
-        if (needs_render and running and !warmup_ready) {
+        if (!warmup_ready) {
             const elapsed_ns = warmup_timer.read();
             if (elapsed_ns >= warmup_ns) {
                 warmup_ready = true;
                 collect_samples.store(true, .release);
-                if (!loop.tryPostEvent(.data_update)) {
-                    loop.postEvent(.data_update);
+            } else {
+                const remaining_ns = warmup_ns - elapsed_ns;
+                try renderer.renderWarmup(&vx, &tty, elapsed_ns, remaining_ns, warmup_total_seconds);
+
+                const spinner_sleep_ns: u64 = 150 * time.ns_per_ms;
+                const sleep_ns = if (remaining_ns > spinner_sleep_ns) spinner_sleep_ns else remaining_ns;
+                if (sleep_ns > 0) {
+                    std.Thread.sleep(sleep_ns);
                 }
+
+                notify(&loop);
                 continue;
             }
-
-            const remaining_ns = warmup_ns - elapsed_ns;
-            try renderer.renderWarmup(&vx, &tty, elapsed_ns, remaining_ns, warmup_total_seconds);
-
-            const spinner_sleep_ns: u64 = 150 * time.ns_per_ms;
-            const sleep_ns = if (remaining_ns > spinner_sleep_ns) spinner_sleep_ns else remaining_ns;
-            if (sleep_ns > 0) {
-                std.Thread.sleep(sleep_ns);
-            }
-
-            if (!loop.tryPostEvent(.data_update)) {
-                loop.postEvent(.data_update);
-            }
         }
+
+        const sorted_indices = renderer.collectSortedIndices(SharedStat, shared_stats, sorted_index_buffer[0..]);
+        try renderer.render(SharedStat, &vx, &tty, shared_stats, sorted_indices);
+    }
+}
+
+fn notify(loop: *EventLoop) void {
+    if (!loop.tryPostEvent(.data_update)) {
+        loop.postEvent(.data_update);
     }
 }
 
@@ -184,30 +179,36 @@ fn pingWorker(ctx: WorkerContext) void {
     var redirect_buf: [2048]u8 = undefined;
 
     while (!ctx.shutdown.load(.acquire)) {
-        var retries: u8 = 3;
-        var measurement: ?f64 = null;
-        while (retries > 0 and measurement == null and !ctx.shutdown.load(.acquire)) : (retries -= 1) {
-            measurement = pingOnce(&client, uri, &redirect_buf) catch |err| blk: {
-                log.debug("ping failed for {s}: {s}", .{ ctx.region.name, @errorName(err) });
-                break :blk null;
-            };
-            if (measurement == null) {
-                sleepWithShutdown(ctx.shutdown, 500 * time.ns_per_ms);
-            }
-        }
+        const measurement = takeMeasurement(&ctx, &client, uri, &redirect_buf);
 
         if (ctx.collect.load(.acquire)) {
             ctx.stats.mutex.lock();
             ctx.stats.data.addSample(measurement);
             ctx.stats.mutex.unlock();
 
-            if (!ctx.loop.tryPostEvent(.data_update)) {
-                ctx.loop.postEvent(.data_update);
-            }
+            notify(ctx.loop);
         }
 
         sleepWithShutdown(ctx.shutdown, time.ns_per_s);
     }
+}
+
+fn takeMeasurement(
+    ctx: *const WorkerContext,
+    client: *std.http.Client,
+    uri: std.Uri,
+    redirect_buf: *[2048]u8,
+) ?f64 {
+    var retries: u8 = 3;
+    while (retries > 0 and !ctx.shutdown.load(.acquire)) : (retries -= 1) {
+        const result = pingOnce(client, uri, redirect_buf) catch |err| blk: {
+            log.debug("ping failed for {s}: {s}", .{ ctx.region.name, @errorName(err) });
+            break :blk null;
+        };
+        if (result) |value| return value;
+        sleepWithShutdown(ctx.shutdown, 500 * time.ns_per_ms);
+    }
+    return null;
 }
 
 fn pingOnce(
