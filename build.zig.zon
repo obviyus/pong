@@ -1,0 +1,12 @@
+.{
+    .name = .pong,
+    .version = "0.15.1",
+    .dependencies = .{
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#4f6c1fc75c1e406e8db19fec4f447f3a183663f0",
+            .hash = "vaxis-0.5.1-BWNV_OAsCQA13jnKNnBh97YjTP4K4YwAT-pkH-RaHlMI",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x2158414fdc237082,
+}
