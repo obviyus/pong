@@ -1,6 +1,10 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 
+pub const std_options = std.Options{
+    .log_level = .info,
+};
+
 const regions = @import("regions.zig");
 const stats = @import("stats.zig");
 const renderer = @import("render.zig");
@@ -29,6 +33,7 @@ const WorkerContext = struct {
     region: Region,
     stats: *SharedStat,
     shutdown: *std.atomic.Value(bool),
+    collect: *std.atomic.Value(bool),
     loop: *EventLoop,
     allocator: std.mem.Allocator,
 };
@@ -46,8 +51,13 @@ pub fn main() !void {
             std.process.exit(1);
         },
     };
+    const warmup_total_seconds: u64 = if (warmup_ns == 0)
+        0
+    else
+        (warmup_ns + time.ns_per_s - 1) / time.ns_per_s;
     var warmup_timer = try time.Timer.start();
     var warmup_ready = warmup_ns == 0;
+    var collect_samples = std.atomic.Value(bool).init(warmup_ready);
 
     var tty_buffer: [1024]u8 = undefined;
     var tty = try vaxis.Tty.init(&tty_buffer);
@@ -88,6 +98,7 @@ pub fn main() !void {
             .region = region,
             .stats = &shared_stats_storage[idx],
             .shutdown = &shutdown,
+            .collect = &collect_samples,
             .loop = &loop,
             .allocator = allocator,
         };
@@ -119,14 +130,44 @@ pub fn main() !void {
             .data_update => needs_render = true,
         }
 
+        if (!warmup_ready) {
+            needs_render = true;
+        }
+
         if (!warmup_ready and warmup_timer.read() >= warmup_ns) {
             warmup_ready = true;
+            collect_samples.store(true, .release);
             needs_render = true;
         }
 
         if (needs_render and running and warmup_ready) {
             const sorted_indices = renderer.collectSortedIndices(SharedStat, shared_stats, sorted_index_buffer[0..]);
             try renderer.render(SharedStat, &vx, &tty, shared_stats, sorted_indices);
+        }
+
+        if (needs_render and running and !warmup_ready) {
+            const elapsed_ns = warmup_timer.read();
+            if (elapsed_ns >= warmup_ns) {
+                warmup_ready = true;
+                collect_samples.store(true, .release);
+                if (!loop.tryPostEvent(.data_update)) {
+                    loop.postEvent(.data_update);
+                }
+                continue;
+            }
+
+            const remaining_ns = warmup_ns - elapsed_ns;
+            try renderer.renderWarmup(&vx, &tty, elapsed_ns, remaining_ns, warmup_total_seconds);
+
+            const spinner_sleep_ns: u64 = 150 * time.ns_per_ms;
+            const sleep_ns = if (remaining_ns > spinner_sleep_ns) spinner_sleep_ns else remaining_ns;
+            if (sleep_ns > 0) {
+                std.Thread.sleep(sleep_ns);
+            }
+
+            if (!loop.tryPostEvent(.data_update)) {
+                loop.postEvent(.data_update);
+            }
         }
     }
 }
@@ -155,12 +196,14 @@ fn pingWorker(ctx: WorkerContext) void {
             }
         }
 
-        ctx.stats.mutex.lock();
-        ctx.stats.data.addSample(measurement);
-        ctx.stats.mutex.unlock();
+        if (ctx.collect.load(.acquire)) {
+            ctx.stats.mutex.lock();
+            ctx.stats.data.addSample(measurement);
+            ctx.stats.mutex.unlock();
 
-        if (!ctx.loop.tryPostEvent(.data_update)) {
-            ctx.loop.postEvent(.data_update);
+            if (!ctx.loop.tryPostEvent(.data_update)) {
+                ctx.loop.postEvent(.data_update);
+            }
         }
 
         sleepWithShutdown(ctx.shutdown, time.ns_per_s);
