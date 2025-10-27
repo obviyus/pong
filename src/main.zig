@@ -204,7 +204,7 @@ fn parseWarmup(allocator: std.mem.Allocator) !u64 {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
-    _ = args.next();
+    const program_name = args.next() orelse "pong";
 
     var warmup_ns: u64 = 0;
 
@@ -222,6 +222,9 @@ fn parseWarmup(allocator: std.mem.Allocator) !u64 {
                 log.err("--warmup value too large", .{});
                 return error.InvalidArgument;
             };
+        } else if (std.mem.eql(u8, arg, "--help")) {
+            showHelp(program_name);
+            std.process.exit(0);
         } else {
             log.err("unrecognized argument '{s}'", .{arg});
             return error.InvalidArgument;
@@ -229,4 +232,15 @@ fn parseWarmup(allocator: std.mem.Allocator) !u64 {
     }
 
     return warmup_ns;
+}
+
+fn showHelp(program_name: []const u8) void {
+    std.debug.print(
+        \\Usage: {s} [--warmup <seconds>] [--help]
+        \\
+        \\Options:
+        \\  --warmup <seconds>  delay rendering to allow initial pings to settle
+        \\  --help              display this help and exit
+        \\
+    , .{program_name});
 }
