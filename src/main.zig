@@ -41,6 +41,14 @@ pub fn main() !void {
     }
     const allocator = gpa.allocator();
 
+    const warmup_ns = parseWarmup(allocator) catch |err| switch (err) {
+        error.InvalidArgument => {
+            std.process.exit(1);
+        },
+    };
+    var warmup_timer = try time.Timer.start();
+    var warmup_ready = warmup_ns == 0;
+
     var tty_buffer: [1024]u8 = undefined;
     var tty = try vaxis.Tty.init(&tty_buffer);
     defer tty.deinit();
@@ -111,7 +119,12 @@ pub fn main() !void {
             .data_update => needs_render = true,
         }
 
-        if (needs_render and running) {
+        if (!warmup_ready and warmup_timer.read() >= warmup_ns) {
+            warmup_ready = true;
+            needs_render = true;
+        }
+
+        if (needs_render and running and warmup_ready) {
             const sorted_indices = renderer.collectSortedIndices(SharedStat, shared_stats, sorted_index_buffer[0..]);
             try renderer.render(SharedStat, &vx, &tty, shared_stats, sorted_indices);
         }
@@ -185,4 +198,35 @@ fn sleepWithShutdown(flag: *std.atomic.Value(bool), total_ns: u64) void {
         std.Thread.sleep(step);
         remaining -= step;
     }
+}
+
+fn parseWarmup(allocator: std.mem.Allocator) !u64 {
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+
+    _ = args.next();
+
+    var warmup_ns: u64 = 0;
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--warmup")) {
+            const value = args.next() orelse {
+                log.err("--warmup expects a time in seconds", .{});
+                return error.InvalidArgument;
+            };
+            const seconds = std.fmt.parseUnsigned(u64, value, 10) catch |parse_err| {
+                log.err("invalid --warmup value '{s}': {s}", .{ value, @errorName(parse_err) });
+                return error.InvalidArgument;
+            };
+            warmup_ns = std.math.mul(u64, seconds, time.ns_per_s) catch {
+                log.err("--warmup value too large", .{});
+                return error.InvalidArgument;
+            };
+        } else {
+            log.err("unrecognized argument '{s}'", .{arg});
+            return error.InvalidArgument;
+        }
+    }
+
+    return warmup_ns;
 }
