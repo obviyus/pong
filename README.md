@@ -15,7 +15,7 @@ Pong is a simple CLI program that I use to check latencies between different AWS
 Download the latest release from the [releases page](https://github.com/obviyus/pong/releases) and add it to your `$PATH`.
 
 ```bash
-wget https://github.com/obviyus/pong/releases/download/v1.0.9/pong-macos-aarch64
+wget https://github.com/obviyus/pong/releases/download/v1.2.0/pong-macos-aarch64
 chmod +x pong-macos-aarch64
 mv pong-macos-aarch64 /usr/local/bin/pong
 ```
