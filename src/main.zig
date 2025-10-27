@@ -10,6 +10,7 @@ const stats = @import("stats.zig");
 const renderer = @import("render.zig");
 
 const time = std.time;
+const retry_delay_ns: u64 = 500 * time.ns_per_ms;
 
 const log = std.log.scoped(.pong);
 
@@ -78,9 +79,6 @@ pub fn main() !void {
 
     var shared_stats_storage: [regions.region_count]SharedStat = undefined;
     const shared_stats = shared_stats_storage[0..];
-    for (regions.REGIONS_LIST, 0..) |region, idx| {
-        shared_stats_storage[idx] = .{ .data = PingStats.init(region.name) };
-    }
 
     var worker_threads: [regions.region_count]std.Thread = undefined;
     var worker_count: usize = 0;
@@ -93,18 +91,19 @@ pub fn main() !void {
         }
     }
 
-    for (regions.REGIONS_LIST, 0..) |region, idx| {
+    for (shared_stats_storage, regions.REGIONS_LIST, 0..) |*shared, region, idx| {
+        shared.* = .{ .data = PingStats.init(region.name) };
         const ctx = WorkerContext{
             .region = region,
-            .stats = &shared_stats_storage[idx],
+            .stats = shared,
             .shutdown = &shutdown,
             .collect = &collect_samples,
             .loop = &loop,
             .allocator = allocator,
         };
         const thread = try std.Thread.spawn(.{}, pingWorker, .{ctx});
-        worker_threads[worker_count] = thread;
-        worker_count += 1;
+        worker_threads[idx] = thread;
+        worker_count = idx + 1;
     }
 
     loop.postEvent(.data_update);
@@ -114,21 +113,18 @@ pub fn main() !void {
     var running = true;
     while (running) {
         const event = loop.nextEvent();
-        var needs_render = false;
-
-        switch (event) {
-            .key_press => |key| {
-                needs_render = true;
-                if (key.matches('q', .{}) or key.matches('c', .{ .ctrl = true })) {
-                    running = false;
-                }
+        var needs_render = switch (event) {
+            .key_press => |key| blk: {
+                const quit = key.matches('q', .{}) or key.matches('c', .{ .ctrl = true });
+                if (quit) running = false;
+                break :blk true;
             },
-            .winsize => |ws| {
+            .winsize => |ws| blk: {
                 try vx.resize(allocator, tty.writer(), ws);
-                needs_render = true;
+                break :blk true;
             },
-            .data_update => needs_render = true,
-        }
+            .data_update => true,
+        };
 
         if (!warmup_ready) {
             needs_render = true;
@@ -136,8 +132,8 @@ pub fn main() !void {
 
         if (!needs_render or !running) continue;
 
+        const elapsed_ns = warmup_timer.read();
         if (!warmup_ready) {
-            const elapsed_ns = warmup_timer.read();
             if (elapsed_ns >= warmup_ns) {
                 warmup_ready = true;
                 collect_samples.store(true, .release);
@@ -206,7 +202,7 @@ fn takeMeasurement(
             break :blk null;
         };
         if (result) |value| return value;
-        sleepWithShutdown(ctx.shutdown, 500 * time.ns_per_ms);
+        sleepWithShutdown(ctx.shutdown, retry_delay_ns);
     }
     return null;
 }
