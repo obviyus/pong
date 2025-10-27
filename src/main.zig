@@ -45,6 +45,11 @@ const RegionSnapshot = struct {
     p99: ?f64,
 };
 
+const SortContext = struct {
+    avg_cache: []const ?f64,
+    shared_stats: []const SharedStat,
+};
+
 const column_labels = [_][]const u8{
     "AWS Region",
     "Last",
@@ -125,7 +130,7 @@ pub fn main() !void {
 
     loop.postEvent(.data_update);
 
-    var snapshots_buffer: [regions.region_count]RegionSnapshot = undefined;
+    var sorted_index_buffer: [regions.region_count]usize = undefined;
 
     var running = true;
     while (running) {
@@ -147,8 +152,8 @@ pub fn main() !void {
         }
 
         if (needs_render and running) {
-            const snapshots = collectSnapshots(shared_stats, snapshots_buffer[0..]);
-            try render(&vx, &tty, snapshots);
+            const sorted_indices = collectSortedIndices(shared_stats, sorted_index_buffer[0..]);
+            try render(&vx, &tty, shared_stats, sorted_indices);
         }
     }
 }
@@ -212,36 +217,35 @@ fn pingOnce(
     return @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(time.ns_per_ms));
 }
 
-fn collectSnapshots(
+fn collectSortedIndices(
     shared_stats: []SharedStat,
-    out: []RegionSnapshot,
-) []RegionSnapshot {
-    for (shared_stats, 0..) |*entry, idx| {
-        entry.mutex.lock();
-        const snapshot = RegionSnapshot{
-            .region = entry.data.region,
-            .last = entry.data.last(),
-            .min = entry.data.min(),
-            .avg = entry.data.avg(),
-            .max = entry.data.max(),
-            .stddev = entry.data.stddev(),
-            .p95 = entry.data.p95(),
-            .p99 = entry.data.p99(),
-        };
-        entry.mutex.unlock();
-        out[idx] = snapshot;
+    out: []usize,
+) []const usize {
+    const len = shared_stats.len;
+    var avg_cache: [regions.region_count]?f64 = undefined;
+
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        out[i] = i;
+        shared_stats[i].mutex.lock();
+        avg_cache[i] = shared_stats[i].data.avg();
+        shared_stats[i].mutex.unlock();
     }
 
-    const len = shared_stats.len;
     const slice = out[0..len];
-    sort.heap(RegionSnapshot, slice, {}, compareByAvg);
+    const ctx = SortContext{
+        .avg_cache = avg_cache[0..len],
+        .shared_stats = shared_stats,
+    };
+    sort.heap(usize, slice, ctx, compareIndexByAvg);
     return slice;
 }
 
 fn render(
     vx: *vaxis.Vaxis,
     tty: *vaxis.Tty,
-    snapshots: []const RegionSnapshot,
+    shared_stats: []SharedStat,
+    sorted_indices: []const usize,
 ) !void {
     var formatted_cache: [regions.region_count][7][16]u8 = undefined;
 
@@ -276,9 +280,11 @@ fn render(
         @as(usize, table.height) - 1
     else
         0;
-    for (snapshots, 0..) |snapshot, i| {
+    for (sorted_indices, 0..) |region_idx, i| {
         if (i >= max_rows) break;
         const row: u16 = @intCast(i + 1);
+
+        const snapshot = snapshotSharedStat(&shared_stats[region_idx]);
 
         _ = table.print(&.{
             .{ .text = snapshot.region, .style = palette.text },
@@ -364,22 +370,45 @@ fn styleForLast(last: ?f64, avg: ?f64) vaxis.Cell.Style {
     return palette.yellow;
 }
 
-fn compareByAvg(_: void, lhs: RegionSnapshot, rhs: RegionSnapshot) bool {
-    if (lhs.avg) |la| {
-        if (rhs.avg) |ra| {
+fn snapshotSharedStat(entry: *SharedStat) RegionSnapshot {
+    entry.mutex.lock();
+    defer entry.mutex.unlock();
+
+    return RegionSnapshot{
+        .region = entry.data.region,
+        .last = entry.data.last(),
+        .min = entry.data.min(),
+        .avg = entry.data.avg(),
+        .max = entry.data.max(),
+        .stddev = entry.data.stddev(),
+        .p95 = entry.data.p95(),
+        .p99 = entry.data.p99(),
+    };
+}
+
+fn compareIndexByAvg(ctx: SortContext, lhs: usize, rhs: usize) bool {
+    const lhs_avg = ctx.avg_cache[lhs];
+    const rhs_avg = ctx.avg_cache[rhs];
+
+    if (lhs_avg) |la| {
+        if (rhs_avg) |ra| {
             if (la == ra) {
-                return mem.lessThan(u8, lhs.region, rhs.region);
+                const lhs_region = ctx.shared_stats[lhs].data.region;
+                const rhs_region = ctx.shared_stats[rhs].data.region;
+                return mem.lessThan(u8, lhs_region, rhs_region);
             }
             return la < ra;
         }
         return false;
     }
 
-    if (rhs.avg != null) {
+    if (rhs_avg != null) {
         return true;
     }
 
-    return mem.lessThan(u8, lhs.region, rhs.region);
+    const lhs_region = ctx.shared_stats[lhs].data.region;
+    const rhs_region = ctx.shared_stats[rhs].data.region;
+    return mem.lessThan(u8, lhs_region, rhs_region);
 }
 
 fn calcColumnOffsets() [column_labels.len]u16 {
