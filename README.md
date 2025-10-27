@@ -2,9 +2,13 @@
 
 ![pong-demo](assets/pong-demo.avif)
 
-Pong is a simple CLI program that I use to ping different AWS regions. It's written in Rust and uses the `ratatui` library for for TUI.
+Pong is a simple CLI program that I use to check latencies between different AWS regions. It's written in Zig and rendered with the excellent [`libvaxis`](https://github.com/rockorager/libvaxis) TUI toolkit.
 
-I wrote this because I purchased a new ethernet cable and wanted to compare latency between WiFi and ethernet.
+## Features
+
+- Zero-copy rendering pipeline with per-frame stack buffers to keep latency stats allocation-free.
+- Concurrent HTTP HEAD probes across AWS regions with per-worker threads and shared atomic coordination.
+- Rolling percentile/variance tracking without heap churn by using fixed-capacity ring buffers.
 
 ## Installation
 
@@ -20,5 +24,5 @@ mv pong-macos-aarch64 /usr/local/bin/pong
 ## Building `pong`
 
 ```bash
-cargo run --release
+zig build run
 ```
