@@ -36,6 +36,7 @@ const RegionSnapshot = struct {
     stddev: ?f64,
     p95: ?f64,
     p99: ?f64,
+    samples: u64,
 };
 
 fn SortContext(comptime SharedStatType: type) type {
@@ -80,6 +81,7 @@ pub fn render(
 ) !void {
     var formatted_cache: [regions.region_count][7][16]u8 = undefined;
     var header_cache: [column_labels.len][32]u8 = undefined;
+    var total_samples: u64 = 0;
 
     const win = vx.window();
     win.clear();
@@ -118,10 +120,12 @@ pub fn render(
     else
         0;
     for (sorted_indices, 0..) |region_idx, i| {
-        if (i >= max_rows) break;
         const row: u16 = @intCast(i + 1);
 
         const snapshot = snapshotSharedStat(SharedStatType, &shared_stats[region_idx]);
+        total_samples += snapshot.samples;
+
+        if (i >= max_rows) continue;
 
         _ = table.print(&.{
             .{ .text = snapshot.region, .style = palette.text },
@@ -166,13 +170,32 @@ pub fn render(
         }
     }
 
-    const status = "Press q or Ctrl+C to quit.";
     if (win.height > 0) {
+        const quit_hint = "Press q or Ctrl+C to quit.";
         _ = win.print(&.{
-            .{ .text = status, .style = palette.text },
+            .{ .text = quit_hint, .style = palette.text },
         }, .{
             .row_offset = win.height - 1,
             .col_offset = 1,
+            .wrap = .none,
+        });
+
+        var samples_buf: [64]u8 = undefined;
+        const samples_text = try formatSampleCount(&samples_buf, total_samples);
+        var status_buf: [80]u8 = undefined;
+        const status_text = try std.fmt.bufPrint(&status_buf, "{s} samples", .{samples_text});
+        const width = win.width;
+        const text_len: u16 = @intCast(status_text.len);
+        const offset: u16 = if (width > text_len)
+            width - text_len - 1
+        else
+            0;
+
+        _ = win.print(&.{
+            .{ .text = status_text, .style = palette.text },
+        }, .{
+            .row_offset = win.height - 1,
+            .col_offset = offset,
             .wrap = .none,
         });
     }
@@ -222,6 +245,7 @@ fn snapshotSharedStat(comptime SharedStatType: type, entry: *SharedStatType) Reg
         .stddev = entry.data.stddev(),
         .p95 = entry.data.p95(),
         .p99 = entry.data.p99(),
+        .samples = entry.data.totalSamples(),
     };
 }
 
@@ -269,4 +293,27 @@ fn calcColumnOffsets() [column_labels.len]u16 {
         current += column_widths[i] + 2;
     }
     return offsets;
+}
+
+fn formatSampleCount(buf: *[64]u8, value: u64) ![]const u8 {
+    const thresholds = [_]struct {
+        value: u64,
+        suffix: []const u8,
+    }{
+        .{ .value = 1_000_000_000_000, .suffix = "T" },
+        .{ .value = 1_000_000_000, .suffix = "B" },
+        .{ .value = 1_000_000, .suffix = "M" },
+        .{ .value = 1_000, .suffix = "K" },
+    };
+
+    var i: usize = 0;
+    while (i < thresholds.len) : (i += 1) {
+        const threshold = thresholds[i];
+        if (value >= threshold.value) {
+            const scaled = @as(f64, @floatFromInt(value)) / @as(f64, @floatFromInt(threshold.value));
+            return std.fmt.bufPrint(buf, "{d:.1}{s}", .{ scaled, threshold.suffix });
+        }
+    }
+
+    return std.fmt.bufPrint(buf, "{d}", .{value});
 }

@@ -12,6 +12,7 @@ pub const PingStats = struct {
     head: usize = 0,
     cached: CachedStats = .{},
     cache_valid: bool = false,
+    total_samples: u64 = 0,
 
     pub fn init(region: []const u8) PingStats {
         return .{
@@ -28,6 +29,7 @@ pub const PingStats = struct {
                 self.len += 1;
             }
             self.cache_valid = false;
+            self.total_samples +|= 1;
         }
     }
 
@@ -35,6 +37,10 @@ pub const PingStats = struct {
         if (self.len == 0) return null;
         const index = if (self.head == 0) capacity - 1 else self.head - 1;
         return self.buffer[index];
+    }
+
+    pub fn totalSamples(self: *const PingStats) u64 {
+        return self.total_samples;
     }
 
     pub fn min(self: *PingStats) ?f64 {
