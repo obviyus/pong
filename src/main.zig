@@ -161,7 +161,7 @@ fn pingOnce(
 ) !?f64 {
     var request = try client.request(.HEAD, uri, .{
         .headers = .{
-            .user_agent = .{ .override = "pong-zig" },
+            .user_agent = .{ .override = "pong" },
         },
         .redirect_behavior = .unhandled,
     });
