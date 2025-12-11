@@ -4,146 +4,148 @@ const math = std.math;
 const sort = std.sort;
 
 pub const PingStats = struct {
-    pub const capacity = 100;
+    pub const capacity = 128;
 
     region: []const u8,
     buffer: [capacity]f64 = undefined,
     len: usize = 0,
     head: usize = 0,
-    cached: CachedStats = .{},
-    cache_valid: bool = false,
+
+    welford_count: u64 = 0,
+    welford_mean: f64 = 0.0,
+    welford_m2: f64 = 0.0,
+
+    running_min: f64 = math.inf(f64),
+    running_max: f64 = -math.inf(f64),
+    min_max_valid: bool = true,
+
+    last_value: ?f64 = null,
+
+    percentile_cache: PercentileCache = .{},
+    percentile_valid: bool = false,
+
     total_samples: u64 = 0,
 
     pub fn init(region: []const u8) PingStats {
         return .{
             .region = region,
-            .buffer = undefined,
         };
     }
 
     pub fn addSample(self: *PingStats, latency_ms: ?f64) void {
-        if (latency_ms) |value| {
-            self.buffer[self.head] = value;
-            self.head = (self.head + 1) % capacity;
-            if (self.len < capacity) {
-                self.len += 1;
+        const value = latency_ms orelse return;
+
+        if (self.len == capacity) {
+            const evicted = self.buffer[self.head];
+            if (evicted <= self.running_min or evicted >= self.running_max) {
+                self.min_max_valid = false;
             }
-            self.cache_valid = false;
-            self.total_samples +|= 1;
         }
+
+        self.buffer[self.head] = value;
+        self.head = (self.head + 1) & (capacity - 1);
+        if (self.len < capacity) {
+            self.len += 1;
+        }
+
+        self.welford_count +|= 1;
+        const delta = value - self.welford_mean;
+        self.welford_mean += delta / @as(f64, @floatFromInt(self.welford_count));
+        const delta2 = value - self.welford_mean;
+        self.welford_m2 += delta * delta2;
+
+        if (value < self.running_min) self.running_min = value;
+        if (value > self.running_max) self.running_max = value;
+
+        self.last_value = value;
+        self.percentile_valid = false;
+        self.total_samples +|= 1;
     }
 
     pub fn last(self: *const PingStats) ?f64 {
-        if (self.len == 0) return null;
-        const index = if (self.head == 0) capacity - 1 else self.head - 1;
-        return self.buffer[index];
+        return self.last_value;
     }
 
     pub fn totalSamples(self: *const PingStats) u64 {
         return self.total_samples;
     }
 
+    pub fn avg(self: *const PingStats) ?f64 {
+        if (self.welford_count == 0) return null;
+        return self.welford_mean;
+    }
+
+    pub fn stddev(self: *const PingStats) ?f64 {
+        if (self.welford_count < 2) return null;
+        const variance = self.welford_m2 / @as(f64, @floatFromInt(self.welford_count - 1));
+        return math.sqrt(variance);
+    }
+
     pub fn min(self: *PingStats) ?f64 {
-        return self.stat("min");
+        if (self.len == 0) return null;
+        if (!self.min_max_valid) self.recomputeMinMax();
+        return self.running_min;
     }
 
     pub fn max(self: *PingStats) ?f64 {
-        return self.stat("max");
-    }
-
-    pub fn avg(self: *PingStats) ?f64 {
-        return self.stat("avg");
-    }
-
-    pub fn stddev(self: *PingStats) ?f64 {
-        return self.stat("stddev");
+        if (self.len == 0) return null;
+        if (!self.min_max_valid) self.recomputeMinMax();
+        return self.running_max;
     }
 
     pub fn p95(self: *PingStats) ?f64 {
-        return self.stat("p95");
+        if (self.len == 0) return null;
+        if (!self.percentile_valid) self.recomputePercentiles();
+        return self.percentile_cache.p95;
     }
 
     pub fn p99(self: *PingStats) ?f64 {
-        return self.stat("p99");
-    }
-
-    inline fn stat(self: *PingStats, comptime field: []const u8) ?f64 {
         if (self.len == 0) return null;
-        return @field(self.ensureStats(), field);
+        if (!self.percentile_valid) self.recomputePercentiles();
+        return self.percentile_cache.p99;
     }
 
-    fn ensureStats(self: *PingStats) CachedStats {
-        if (!self.cache_valid) {
-            self.cached = self.computeStats();
-            self.cache_valid = true;
-        }
-        return self.cached;
-    }
-
-    fn computeStats(self: *const PingStats) CachedStats {
-        if (self.len == 0) return .{};
-
-        var scratch: [capacity]f64 = undefined;
-        const values = self.copyValues(&scratch);
-
+    fn recomputeMinMax(self: *PingStats) void {
         var min_val = math.inf(f64);
         var max_val = -math.inf(f64);
-        var sum: f64 = 0.0;
 
-        for (values) |value| {
-            min_val = @min(min_val, value);
-            max_val = @max(max_val, value);
-            sum += value;
+        const start = (self.head + capacity - self.len) & (capacity - 1);
+        var i: usize = 0;
+        while (i < self.len) : (i += 1) {
+            const idx = (start + i) & (capacity - 1);
+            const val = self.buffer[idx];
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
         }
 
-        const count = @as(f64, @floatFromInt(values.len));
-        const avg_val = sum / count;
-
-        var variance_sum: f64 = 0.0;
-        if (values.len > 1) {
-            for (values) |value| {
-                const diff = value - avg_val;
-                variance_sum += diff * diff;
-            }
-        }
-        const variance = if (values.len > 1)
-            variance_sum / @as(f64, @floatFromInt(values.len - 1))
-        else
-            0.0;
-
-        sort.heap(f64, values, {}, sort.asc(f64));
-        const idx95 = percentileIndex(values.len, 0.95);
-        const idx99 = percentileIndex(values.len, 0.99);
-
-        return .{
-            .min = min_val,
-            .max = max_val,
-            .avg = avg_val,
-            .stddev = math.sqrt(variance),
-            .p95 = values[idx95],
-            .p99 = values[idx99],
-        };
+        self.running_min = min_val;
+        self.running_max = max_val;
+        self.min_max_valid = true;
     }
 
-    fn copyValues(self: *const PingStats, dest: *[capacity]f64) []f64 {
-        var out_index: usize = 0;
-        if (self.len == 0) return dest[0..0];
+    fn recomputePercentiles(self: *PingStats) void {
+        if (self.len == 0) return;
 
-        const start = (self.head + capacity - self.len) % capacity;
-        var idx = start;
-        while (out_index < self.len) : (out_index += 1) {
-            dest[out_index] = self.buffer[idx];
-            idx = (idx + 1) % capacity;
+        var scratch: [capacity]f64 = undefined;
+        const start = (self.head + capacity - self.len) & (capacity - 1);
+        var i: usize = 0;
+        while (i < self.len) : (i += 1) {
+            const idx = (start + i) & (capacity - 1);
+            scratch[i] = self.buffer[idx];
         }
-        return dest[0..self.len];
+        const values = scratch[0..self.len];
+
+        sort.heap(f64, values, {}, sort.asc(f64));
+
+        self.percentile_cache = .{
+            .p95 = values[percentileIndex(self.len, 0.95)],
+            .p99 = values[percentileIndex(self.len, 0.99)],
+        };
+        self.percentile_valid = true;
     }
 };
 
-const CachedStats = struct {
-    min: f64 = 0.0,
-    max: f64 = 0.0,
-    avg: f64 = 0.0,
-    stddev: f64 = 0.0,
+const PercentileCache = struct {
     p95: f64 = 0.0,
     p99: f64 = 0.0,
 };
