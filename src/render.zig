@@ -15,8 +15,30 @@ const column_labels = [_][]const u8{
     "P99",
 };
 
-const column_widths = [_]u16{ 28, 9, 9, 9, 9, 9, 9, 9 };
+const column_widths = [_]u16{ 28, 11, 11, 11, 11, 11, 11, 11 };
 const column_offsets = calcColumnOffsets();
+// AIDEV-NOTE: Columns are hidden right-to-left when terminal is too narrow
+// Priority order (left to right): Region, Last, Min, Avg, Max, Stddev, P95, P99
+fn calcVisibleColumns(width: u16) usize {
+    var total: u16 = 2; // borders
+    var visible: usize = 0;
+    for (column_widths) |w| {
+        const needed = total + w + 2;
+        if (needed > width) break;
+        total = needed;
+        visible += 1;
+    }
+    return if (visible < 2) 2 else visible; // Always show at least Region + Last
+}
+
+fn calcDynamicOffsets(visible_cols: usize, offsets: *[column_labels.len]u16) void {
+    var current: u16 = 1;
+    var i: usize = 0;
+    while (i < visible_cols) : (i += 1) {
+        offsets[i] = current;
+        current += column_widths[i] + 2;
+    }
+}
 
 const palette = struct {
     const border = vaxis.Cell.Style{ .fg = .{ .rgb = .{ 80, 120, 160 } } };
@@ -81,12 +103,16 @@ pub fn render(
     table.hideCursor();
     table.fill(.{ .default = true });
 
-    if (table.height == 0) {
+    if (table.height == 0 or table.width == 0) {
         try vx.render(tty.writer());
         return;
     }
 
-    for (column_labels, 0..) |label, idx| {
+    const visible_cols = calcVisibleColumns(table.width);
+    var dynamic_offsets: [column_labels.len]u16 = undefined;
+    calcDynamicOffsets(visible_cols, &dynamic_offsets);
+
+    for (column_labels[0..visible_cols], 0..) |label, idx| {
         const label_text = if (idx == 0)
             label
         else
@@ -96,7 +122,7 @@ pub fn render(
             .{ .text = label_text, .style = palette.header },
         }, .{
             .row_offset = 0,
-            .col_offset = column_offsets[idx],
+            .col_offset = dynamic_offsets[idx],
             .wrap = .none,
         });
     }
@@ -117,9 +143,11 @@ pub fn render(
             .{ .text = snapshot.region, .style = palette.text },
         }, .{
             .row_offset = row,
-            .col_offset = column_offsets[0],
+            .col_offset = dynamic_offsets[0],
             .wrap = .none,
         });
+
+        if (visible_cols < 2) continue;
 
         const last_style = styleForLast(snapshot.last, snapshot.avg);
         const row_buffers = &formatted_cache[i];
@@ -145,12 +173,13 @@ pub fn render(
             .{ .text = p99_text, .style = palette.yellow },
         };
 
-        for (values, 0..) |cell, col_idx| {
+        const data_cols = visible_cols - 1; // exclude region column
+        for (values[0..data_cols], 0..) |cell, col_idx| {
             _ = table.print(&.{
                 .{ .text = cell.text, .style = cell.style },
             }, .{
                 .row_offset = row,
-                .col_offset = column_offsets[col_idx + 1],
+                .col_offset = dynamic_offsets[col_idx + 1],
                 .wrap = .none,
             });
         }
@@ -317,9 +346,10 @@ fn styleForLast(last: ?f64, avg: ?f64) vaxis.Cell.Style {
 
 fn formatLatency(value: ?f64, buf: *[16]u8) ![]const u8 {
     if (value) |latency| {
-        return std.fmt.bufPrint(buf, "{d:>6.2} ms", .{latency});
+        // AIDEV-NOTE: Fixed width of 9 chars total (6 digits + dot + 2 decimal) ensures "ms" always aligns
+        return std.fmt.bufPrint(buf, "{d:>9.2}ms", .{latency});
     }
-    return "--";
+    return "       --";
 }
 
 fn rightAlignedLabel(buf: *[32]u8, label: []const u8, width: u16) []const u8 {
