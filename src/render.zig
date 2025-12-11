@@ -27,18 +27,6 @@ const palette = struct {
     const yellow = vaxis.Cell.Style{ .fg = .{ .rgb = .{ 230, 200, 120 } } };
 };
 
-const RegionSnapshot = struct {
-    region: []const u8,
-    last: ?f64,
-    min: ?f64,
-    avg: ?f64,
-    max: ?f64,
-    stddev: ?f64,
-    p95: ?f64,
-    p99: ?f64,
-    samples: u64,
-};
-
 fn SortContext(comptime SharedStatType: type) type {
     return struct {
         avg_cache: []const ?f64,
@@ -57,9 +45,7 @@ pub fn collectSortedIndices(
     var i: usize = 0;
     while (i < len) : (i += 1) {
         out[i] = i;
-        shared_stats[i].mutex.lock();
-        avg_cache[i] = shared_stats[i].data.avg();
-        shared_stats[i].mutex.unlock();
+        avg_cache[i] = shared_stats[i].readAvg();
     }
 
     const slice = out[0..len];
@@ -122,7 +108,7 @@ pub fn render(
     for (sorted_indices, 0..) |region_idx, i| {
         const row: u16 = @intCast(i + 1);
 
-        const snapshot = snapshotSharedStat(SharedStatType, &shared_stats[region_idx]);
+        const snapshot = shared_stats[region_idx].read();
         total_samples += snapshot.samples;
 
         if (i >= max_rows) continue;
@@ -299,8 +285,8 @@ fn CompareIndexByAvg(comptime SharedStatType: type) type {
             if (lhs_avg) |la| {
                 if (rhs_avg) |ra| {
                     if (la == ra) {
-                        const lhs_region = ctx.shared_stats[lhs].data.region;
-                        const rhs_region = ctx.shared_stats[rhs].data.region;
+                        const lhs_region = ctx.shared_stats[lhs].region;
+                        const rhs_region = ctx.shared_stats[rhs].region;
                         return mem.lessThan(u8, lhs_region, rhs_region);
                     }
                     return la < ra;
@@ -312,27 +298,10 @@ fn CompareIndexByAvg(comptime SharedStatType: type) type {
                 return true;
             }
 
-            const lhs_region = ctx.shared_stats[lhs].data.region;
-            const rhs_region = ctx.shared_stats[rhs].data.region;
+            const lhs_region = ctx.shared_stats[lhs].region;
+            const rhs_region = ctx.shared_stats[rhs].region;
             return mem.lessThan(u8, lhs_region, rhs_region);
         }
-    };
-}
-
-fn snapshotSharedStat(comptime SharedStatType: type, entry: *SharedStatType) RegionSnapshot {
-    entry.mutex.lock();
-    defer entry.mutex.unlock();
-
-    return RegionSnapshot{
-        .region = entry.data.region,
-        .last = entry.data.last(),
-        .min = entry.data.min(),
-        .avg = entry.data.avg(),
-        .max = entry.data.max(),
-        .stddev = entry.data.stddev(),
-        .p95 = entry.data.p95(),
-        .p99 = entry.data.p99(),
-        .samples = entry.data.totalSamples(),
     };
 }
 

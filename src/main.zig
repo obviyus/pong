@@ -25,9 +25,69 @@ const Event = union(enum) {
     data_update,
 };
 
+const StatsSnapshot = struct {
+    region: []const u8,
+    last: ?f64,
+    min: ?f64,
+    avg: ?f64,
+    max: ?f64,
+    stddev: ?f64,
+    p95: ?f64,
+    p99: ?f64,
+    samples: u64,
+};
+
 const SharedStat = struct {
-    mutex: std.Thread.Mutex = .{},
-    data: PingStats,
+    snapshots: [2]StatsSnapshot,
+    current: std.atomic.Value(u8) = std.atomic.Value(u8).init(0),
+    region: []const u8,
+
+    pub fn init(region: []const u8) SharedStat {
+        const empty_snapshot = StatsSnapshot{
+            .region = region,
+            .last = null,
+            .min = null,
+            .avg = null,
+            .max = null,
+            .stddev = null,
+            .p95 = null,
+            .p99 = null,
+            .samples = 0,
+        };
+        return .{
+            .snapshots = .{ empty_snapshot, empty_snapshot },
+            .region = region,
+        };
+    }
+
+    pub fn publish(self: *SharedStat, data: *PingStats) void {
+        const current_idx = self.current.load(.acquire);
+        const write_idx: u8 = 1 - current_idx;
+
+        self.snapshots[write_idx] = StatsSnapshot{
+            .region = data.region,
+            .last = data.last(),
+            .min = data.min(),
+            .avg = data.avg(),
+            .max = data.max(),
+            .stddev = data.stddev(),
+            .p95 = data.p95(),
+            .p99 = data.p99(),
+            .samples = data.totalSamples(),
+        };
+
+        self.current.store(write_idx, .release);
+    }
+
+    pub fn read(self: *const SharedStat) StatsSnapshot {
+        const idx = self.current.load(.acquire);
+        return self.snapshots[idx];
+    }
+
+    pub fn readAvg(self: *const SharedStat) ?f64 {
+        const idx = self.current.load(.acquire);
+        return self.snapshots[idx].avg;
+    }
 };
 
 const WorkerContext = struct {
@@ -36,7 +96,6 @@ const WorkerContext = struct {
     shutdown: *std.atomic.Value(bool),
     collect: *std.atomic.Value(bool),
     loop: *EventLoop,
-    allocator: std.mem.Allocator,
 };
 
 pub fn main() !void {
@@ -92,14 +151,13 @@ pub fn main() !void {
     }
 
     for (shared_stats, regions.REGIONS_LIST, 0..) |*shared, region, idx| {
-        shared.* = .{ .data = PingStats.init(region.name) };
+        shared.* = SharedStat.init(region.name);
         const ctx = WorkerContext{
             .region = region,
             .stats = shared,
             .shutdown = &shutdown,
             .collect = &collect_samples,
             .loop = &loop,
-            .allocator = allocator,
         };
         const thread = try std.Thread.spawn(.{}, pingWorker, .{ctx});
         worker_threads[idx] = thread;
@@ -164,7 +222,10 @@ fn notify(loop: *EventLoop) void {
 }
 
 fn pingWorker(ctx: WorkerContext) void {
-    var client = std.http.Client{ .allocator = ctx.allocator };
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var client = std.http.Client{ .allocator = gpa.allocator() };
     defer client.deinit();
 
     const uri = std.Uri.parse(ctx.region.url) catch |err| {
@@ -173,15 +234,14 @@ fn pingWorker(ctx: WorkerContext) void {
     };
 
     var redirect_buf: [2048]u8 = undefined;
+    var local_stats = PingStats.init(ctx.region.name);
 
     while (!ctx.shutdown.load(.acquire)) {
         const measurement = takeMeasurement(&ctx, &client, uri, &redirect_buf);
 
         if (ctx.collect.load(.acquire)) {
-            ctx.stats.mutex.lock();
-            ctx.stats.data.addSample(measurement);
-            ctx.stats.mutex.unlock();
-
+            local_stats.addSample(measurement);
+            ctx.stats.publish(&local_stats);
             notify(ctx.loop);
         }
 
