@@ -1,0 +1,140 @@
+#[derive(Clone, Copy)]
+pub struct Region {
+    pub name: &'static str,
+    pub url: &'static str,
+}
+
+pub const REGIONS_LIST: [Region; 33] = [
+    Region {
+        name: "us-east-1 (Virginia)",
+        url: "https://dynamodb.us-east-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "us-east-2 (Ohio)",
+        url: "https://dynamodb.us-east-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "us-west-1 (California)",
+        url: "https://dynamodb.us-west-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "us-west-2 (Oregon)",
+        url: "https://dynamodb.us-west-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "ca-central-1 (Canada Central)",
+        url: "https://dynamodb.ca-central-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "ca-west-1 (Canada West)",
+        url: "https://dynamodb.ca-west-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-west-1 (Ireland)",
+        url: "https://dynamodb.eu-west-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-west-2 (London)",
+        url: "https://dynamodb.eu-west-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-west-3 (Paris)",
+        url: "https://dynamodb.eu-west-3.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-central-1 (Frankfurt)",
+        url: "https://dynamodb.eu-central-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-central-2 (Zurich)",
+        url: "https://dynamodb.eu-central-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-south-1 (Milan)",
+        url: "https://dynamodb.eu-south-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-south-2 (Spain)",
+        url: "https://dynamodb.eu-south-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "eu-north-1 (Stockholm)",
+        url: "https://dynamodb.eu-north-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "il-central-1 (Israel)",
+        url: "https://dynamodb.il-central-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "me-south-1 (Bahrain)",
+        url: "https://dynamodb.me-south-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "me-central-1 (UAE)",
+        url: "https://streams.dynamodb.me-central-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "af-south-1 (Cape Town)",
+        url: "https://dynamodb.af-south-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-east-1 (Hong Kong)",
+        url: "https://dynamodb.ap-east-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-southeast-3 (Jakarta)",
+        url: "https://dynamodb.ap-southeast-3.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-south-1 (Mumbai)",
+        url: "https://dynamodb.ap-south-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-south-2 (Hyderabad)",
+        url: "https://dynamodb.ap-south-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-northeast-3 (Osaka)",
+        url: "https://dynamodb.ap-northeast-3.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-northeast-2 (Seoul)",
+        url: "https://dynamodb.ap-northeast-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-southeast-1 (Singapore)",
+        url: "https://dynamodb.ap-southeast-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-southeast-2 (Sydney)",
+        url: "https://dynamodb.ap-southeast-2.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-southeast-4 (Melbourne)",
+        url: "https://dynamodb.ap-southeast-4.amazonaws.com/ping",
+    },
+    Region {
+        name: "ap-northeast-1 (Tokyo)",
+        url: "https://dynamodb.ap-northeast-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "sa-east-1 (São Paulo)",
+        url: "https://dynamodb.sa-east-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "cn-north-1 (Beijing)",
+        url: "https://dynamodb.cn-north-1.amazonaws.com.cn/ping",
+    },
+    Region {
+        name: "cn-northwest-1 (Ningxia)",
+        url: "https://dynamodb.cn-northwest-1.amazonaws.com.cn/ping",
+    },
+    Region {
+        name: "us-gov-east-1",
+        url: "https://dynamodb.us-gov-east-1.amazonaws.com/ping",
+    },
+    Region {
+        name: "us-gov-west-1",
+        url: "https://dynamodb.us-gov-west-1.amazonaws.com/ping",
+    },
+];
