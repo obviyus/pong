@@ -5,8 +5,8 @@ mod ui;
 use std::error::Error;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -58,14 +58,14 @@ impl StatsSnapshot {
 
 pub struct SharedStat {
     pub region: &'static str,
-    snapshot: RwLock<StatsSnapshot>,
+    snapshot: Mutex<StatsSnapshot>,
 }
 
 impl SharedStat {
     fn new(region: &'static str) -> Self {
         Self {
             region,
-            snapshot: RwLock::new(StatsSnapshot::empty(region)),
+            snapshot: Mutex::new(StatsSnapshot::empty(region)),
         }
     }
 
@@ -82,13 +82,13 @@ impl SharedStat {
             samples: stats.total_samples(),
         };
 
-        if let Ok(mut guard) = self.snapshot.write() {
+        if let Ok(mut guard) = self.snapshot.lock() {
             *guard = snapshot;
         }
     }
 
     fn read(&self) -> StatsSnapshot {
-        match self.snapshot.read() {
+        match self.snapshot.lock() {
             Ok(guard) => *guard,
             Err(_) => StatsSnapshot::empty(self.region),
         }
@@ -136,27 +136,32 @@ fn run_app(
     let warmup_start = Instant::now();
     let mut warmup_ready = warmup_duration.is_zero();
 
-    let shutdown = Arc::new(AtomicBool::new(false));
     let collect_samples = Arc::new(AtomicBool::new(warmup_ready));
 
-    let shared_stats: Vec<Arc<SharedStat>> = REGIONS_LIST
+    let shared_stats: Arc<[SharedStat]> = REGIONS_LIST
         .iter()
-        .map(|region| Arc::new(SharedStat::new(region.name)))
-        .collect();
+        .map(|region| SharedStat::new(region.name))
+        .collect::<Vec<_>>()
+        .into();
 
-    let (notify_tx, notify_rx) = mpsc::channel::<()>();
+    let (notify_tx, notify_rx) = mpsc::sync_channel::<()>(1);
     let mut workers = Vec::with_capacity(REGIONS_LIST.len());
-    for (region, stat) in REGIONS_LIST.iter().zip(shared_stats.iter()) {
+    let mut stop_txs = Vec::with_capacity(REGIONS_LIST.len());
+    for (index, region) in REGIONS_LIST.iter().copied().enumerate() {
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        stop_txs.push(stop_tx);
         let worker = spawn_worker(
-            *region,
-            Arc::clone(stat),
-            Arc::clone(&shutdown),
+            region,
+            index,
+            Arc::clone(&shared_stats),
             Arc::clone(&collect_samples),
+            stop_rx,
             notify_tx.clone(),
         );
         workers.push(worker);
     }
     drop(notify_tx);
+    let mut render_snapshots = Vec::with_capacity(shared_stats.len());
 
     let mut running = true;
     let mut needs_render = true;
@@ -201,7 +206,7 @@ fn run_app(
 
         if warmup_ready {
             if needs_render {
-                ui::render(terminal, &shared_stats)?;
+                ui::render(terminal, shared_stats.as_ref(), &mut render_snapshots)?;
                 needs_render = false;
             }
         } else {
@@ -212,7 +217,7 @@ fn run_app(
         }
     }
 
-    shutdown.store(true, Ordering::SeqCst);
+    drop(stop_txs);
     for worker in workers {
         let _ = worker.join();
     }
@@ -222,10 +227,11 @@ fn run_app(
 
 fn spawn_worker(
     region: Region,
-    shared_stat: Arc<SharedStat>,
-    shutdown: Arc<AtomicBool>,
+    stat_index: usize,
+    shared_stats: Arc<[SharedStat]>,
     collect_samples: Arc<AtomicBool>,
-    notify_tx: Sender<()>,
+    stop_rx: Receiver<()>,
+    notify_tx: SyncSender<()>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let client = match Client::builder().redirect(redirect::Policy::none()).build() {
@@ -234,26 +240,28 @@ fn spawn_worker(
         };
 
         let mut local_stats = PingStats::new(region.name);
-        while !shutdown.load(Ordering::Acquire) {
-            let measurement = take_measurement(&client, region.url, &shutdown);
+        while !stop_requested(&stop_rx) {
+            let measurement = take_measurement(&client, region.url, &stop_rx);
             if collect_samples.load(Ordering::Acquire) {
                 local_stats.add_sample(measurement);
-                shared_stat.publish(&mut local_stats);
+                shared_stats[stat_index].publish(&mut local_stats);
                 notify(&notify_tx);
             }
 
-            sleep_with_shutdown(&shutdown, PING_INTERVAL);
+            if wait_for_stop(&stop_rx, PING_INTERVAL) {
+                break;
+            }
         }
     })
 }
 
-fn notify(tx: &Sender<()>) {
-    let _ = tx.send(());
+fn notify(tx: &SyncSender<()>) {
+    let _ = tx.try_send(());
 }
 
-fn take_measurement(client: &Client, url: &str, shutdown: &AtomicBool) -> Option<f64> {
+fn take_measurement(client: &Client, url: &str, stop_rx: &Receiver<()>) -> Option<f64> {
     for _ in 0..3 {
-        if shutdown.load(Ordering::Acquire) {
+        if stop_requested(stop_rx) {
             break;
         }
 
@@ -261,7 +269,9 @@ fn take_measurement(client: &Client, url: &str, shutdown: &AtomicBool) -> Option
             return Some(value);
         }
 
-        sleep_with_shutdown(shutdown, RETRY_DELAY);
+        if wait_for_stop(stop_rx, RETRY_DELAY) {
+            break;
+        }
     }
     None
 }
@@ -272,17 +282,14 @@ fn ping_once(client: &Client, url: &str) -> Result<f64, reqwest::Error> {
     Ok(start.elapsed().as_secs_f64() * 1_000.0)
 }
 
-fn sleep_with_shutdown(flag: &AtomicBool, total: Duration) {
-    let quantum = Duration::from_millis(25);
-    let mut remaining = total;
-    while remaining > Duration::ZERO && !flag.load(Ordering::Acquire) {
-        let step = if remaining < quantum {
-            remaining
-        } else {
-            quantum
-        };
-        thread::sleep(step);
-        remaining = remaining.saturating_sub(step);
+fn stop_requested(stop_rx: &Receiver<()>) -> bool {
+    matches!(stop_rx.try_recv(), Ok(_) | Err(TryRecvError::Disconnected))
+}
+
+fn wait_for_stop(stop_rx: &Receiver<()>, timeout: Duration) -> bool {
+    match stop_rx.recv_timeout(timeout) {
+        Ok(_) | Err(RecvTimeoutError::Disconnected) => true,
+        Err(RecvTimeoutError::Timeout) => false,
     }
 }
 

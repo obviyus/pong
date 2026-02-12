@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::io;
-use std::sync::Arc;
 use std::time::Duration;
 
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
@@ -34,14 +33,16 @@ const YELLOW_STYLE: Style = Style::new().fg(Color::Rgb(230, 200, 120));
 
 pub fn render<B: ratatui::backend::Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
-    shared_stats: &[Arc<SharedStat>],
+    shared_stats: &[SharedStat],
+    snapshots: &mut Vec<StatsSnapshot>,
 ) -> io::Result<()> {
-    let mut snapshots: Vec<StatsSnapshot> = shared_stats.iter().map(|s| s.read()).collect();
+    snapshots.clear();
+    snapshots.extend(shared_stats.iter().map(SharedStat::read));
     snapshots.sort_by(compare_snapshot);
     let total_samples: u64 = snapshots.iter().map(|s| s.samples).sum();
 
     terminal
-        .draw(|frame| draw_table(frame, &snapshots, total_samples))
+        .draw(|frame| draw_table(frame, snapshots.as_slice(), total_samples))
         .map(|_| ())
 }
 
@@ -68,36 +69,27 @@ fn draw_table(frame: &mut Frame, snapshots: &[StatsSnapshot], total_samples: u64
     let table_width = table_area.width.saturating_sub(2);
     let visible_cols = calc_visible_columns(table_width);
 
-    let header_cells = (0..visible_cols).map(|idx| {
-        let text = if idx == 0 {
-            COLUMN_LABELS[idx].to_string()
-        } else {
-            format!(
-                "{:>width$}",
-                COLUMN_LABELS[idx],
-                width = COLUMN_WIDTHS[idx] as usize
-            )
-        };
-        Cell::from(text).style(HEADER_STYLE)
-    });
+    let header_cells =
+        (0..visible_cols).map(|idx| Cell::from(COLUMN_LABELS[idx]).style(HEADER_STYLE));
     let header = Row::new(header_cells);
 
     let rows = snapshots
         .iter()
         .map(|snapshot| row_for_snapshot(snapshot, visible_cols));
-    let widths: Vec<Constraint> = COLUMN_WIDTHS[..visible_cols]
-        .iter()
-        .map(|w| Constraint::Length(*w))
-        .collect();
-
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(BORDER_STYLE),
-        )
-        .column_spacing(2);
+    let table = Table::new(
+        rows,
+        COLUMN_WIDTHS[..visible_cols]
+            .iter()
+            .copied()
+            .map(Constraint::Length),
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(BORDER_STYLE),
+    )
+    .column_spacing(2);
     frame.render_widget(table, table_area);
 
     let hint = "Press q or Ctrl+C to quit.";
@@ -153,35 +145,64 @@ fn draw_warmup(frame: &mut Frame, elapsed: Duration, remaining: Duration, total_
 }
 
 fn row_for_snapshot(snapshot: &StatsSnapshot, visible_cols: usize) -> Row<'static> {
-    let mut cells = Vec::with_capacity(visible_cols);
-    cells.push(Cell::from(snapshot.region.to_string()).style(TEXT_STYLE));
-
-    if visible_cols > 1 {
-        cells.push(
+    match visible_cols {
+        2 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
             Cell::from(format_latency(snapshot.last))
                 .style(style_for_last(snapshot.last, snapshot.avg)),
-        );
+        ]),
+        3 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+        ]),
+        4 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
+        ]),
+        5 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
+        ]),
+        6 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
+        ]),
+        7 => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.p95)).style(YELLOW_STYLE),
+        ]),
+        _ => Row::new([
+            Cell::from(snapshot.region).style(TEXT_STYLE),
+            Cell::from(format_latency(snapshot.last))
+                .style(style_for_last(snapshot.last, snapshot.avg)),
+            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.p95)).style(YELLOW_STYLE),
+            Cell::from(format_latency(snapshot.p99)).style(YELLOW_STYLE),
+        ]),
     }
-    if visible_cols > 2 {
-        cells.push(Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE));
-    }
-    if visible_cols > 3 {
-        cells.push(Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE));
-    }
-    if visible_cols > 4 {
-        cells.push(Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE));
-    }
-    if visible_cols > 5 {
-        cells.push(Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE));
-    }
-    if visible_cols > 6 {
-        cells.push(Cell::from(format_latency(snapshot.p95)).style(YELLOW_STYLE));
-    }
-    if visible_cols > 7 {
-        cells.push(Cell::from(format_latency(snapshot.p99)).style(YELLOW_STYLE));
-    }
-
-    Row::new(cells)
 }
 
 fn compare_snapshot(lhs: &StatsSnapshot, rhs: &StatsSnapshot) -> Ordering {
