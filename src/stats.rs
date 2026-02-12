@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 const CAPACITY: usize = 128;
 
 #[derive(Clone, Copy, Default)]
@@ -175,27 +177,33 @@ impl PingStats {
         }
 
         let values = &mut scratch[..self.len];
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p95_idx = percentile_index(self.len, 95, 100);
+        let p99_idx = percentile_index(self.len, 99, 100);
 
-        self.percentile_cache = PercentileCache {
-            p95: values[percentile_index(self.len, 0.95)],
-            p99: values[percentile_index(self.len, 0.99)],
+        let (p95, p99) = if p95_idx == p99_idx {
+            let (_, value, _) = values.select_nth_unstable_by(p99_idx, compare_latency);
+            (*value, *value)
+        } else {
+            let (left, p99, _) = values.select_nth_unstable_by(p99_idx, compare_latency);
+            let p99_value = *p99;
+            let (_, p95, _) = left.select_nth_unstable_by(p95_idx, compare_latency);
+            (*p95, p99_value)
         };
+
+        self.percentile_cache = PercentileCache { p95, p99 };
         self.percentile_valid = true;
     }
 }
 
-fn percentile_index(len: usize, percentile: f64) -> usize {
+fn percentile_index(len: usize, numerator: usize, denominator: usize) -> usize {
     if len == 0 {
         return 0;
     }
 
-    let count = len as f64;
-    let rank = (count * percentile).ceil();
-    let raw_index = rank as usize;
-    let mut idx = if rank <= 1.0 { 0 } else { raw_index - 1 };
-    if idx >= len {
-        idx = len - 1;
-    }
-    idx
+    let rank = len.saturating_mul(numerator).div_ceil(denominator);
+    rank.saturating_sub(1).min(len - 1)
+}
+
+fn compare_latency(lhs: &f64, rhs: &f64) -> Ordering {
+    lhs.partial_cmp(rhs).unwrap_or(Ordering::Equal)
 }
