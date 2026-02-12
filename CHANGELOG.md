@@ -1,3 +1,19 @@
+# [1.6.0](https://github.com/obviyus/pong/compare/v1.5.0...v1.6.0) (2026-02-12)
+
+
+### Features
+
+* **core:** migrate pong from zig to rust ([226102f](https://github.com/obviyus/pong/commit/226102fdb7174d8799ede6b55a0cb12381a27d62))
+* enhance column width handling and dynamic offsets in render function ([78c232a](https://github.com/obviyus/pong/commit/78c232ab797fa3d827cb3dc109b4c6ecced0cb9c))
+
+
+### Performance Improvements
+
+* lock-free double-buffering for SharedStat ([4490d75](https://github.com/obviyus/pong/commit/4490d75c3fbcfc37318682063ef74eccd4a6c4d3))
+* **runtime:** remove busy wakeups and reduce render churn ([3f7132d](https://github.com/obviyus/pong/commit/3f7132dc4a76e937d44f613fdd7f331385ee9c50))
+* **stats:** use selection for percentile updates ([ed239a7](https://github.com/obviyus/pong/commit/ed239a7bb8a4db1ce119de30c7ba151e1d6e08d3))
+* use Welford's algorithm for incremental stats computation ([be04f88](https://github.com/obviyus/pong/commit/be04f885da69862146f3cfe8bdc8d580829eb02e))
+
 # [1.5.0](https://github.com/obviyus/pong/compare/v1.4.0...v1.5.0) (2025-10-27)
 
 
