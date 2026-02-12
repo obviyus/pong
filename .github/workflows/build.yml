@@ -1,4 +1,4 @@
-name: Buil & Release
+name: Build & Release
 
 on:
   push:
@@ -14,16 +14,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            zig_version: "0.15.1"
-            target: x86_64-linux-gnu
+            target: x86_64-unknown-linux-gnu
             artifact_name: pong-linux-x86_64
-          - os: ubuntu-latest
-            zig_version: "0.15.1"
-            target: aarch64-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
             artifact_name: pong-linux-aarch64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: pong-macos-x86_64
           - os: macos-latest
-            zig_version: "0.15.1"
-            target: aarch64-macos
+            target: aarch64-apple-darwin
             artifact_name: pong-macos-aarch64
     runs-on: ${{ matrix.os }}
 
@@ -31,29 +31,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Zig
-        uses: mlugg/setup-zig@v2
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          version: ${{ matrix.zig_version }}
+          targets: ${{ matrix.target }}
 
-      - name: Cache Zig build artifacts
-        uses: actions/cache@v3
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cache/zig
-            .zig-cache
-          key: ${{ runner.os }}-zig-${{ matrix.zig_version }}-${{ matrix.target }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**/*.zig') }}
-          restore-keys: |
-            ${{ runner.os }}-zig-${{ matrix.zig_version }}-
-            ${{ runner.os }}-zig-
+          key: ${{ matrix.os }}-${{ matrix.target }}
 
       - name: Build
-        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp zig-out/bin/pong artifacts/${{ matrix.artifact_name }}
+          cp target/${{ matrix.target }}/release/pong artifacts/${{ matrix.artifact_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
