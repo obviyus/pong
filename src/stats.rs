@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::StatsSnapshot;
+
 const CAPACITY: usize = 128;
 
 #[derive(Clone, Copy, Default)]
@@ -86,10 +88,6 @@ impl PingStats {
         self.last_value
     }
 
-    pub fn total_samples(&self) -> u64 {
-        self.total_samples
-    }
-
     pub fn avg(&self) -> Option<f64> {
         if self.welford_count == 0 {
             return None;
@@ -145,6 +143,20 @@ impl PingStats {
         Some(self.percentile_cache.p99)
     }
 
+    pub fn snapshot(&mut self) -> StatsSnapshot {
+        StatsSnapshot {
+            region: self.region,
+            last: self.last(),
+            min: self.min(),
+            avg: self.avg(),
+            max: self.max(),
+            stddev: self.stddev(),
+            p95: self.p95(),
+            p99: self.p99(),
+            samples: self.total_samples,
+        }
+    }
+
     fn recompute_min_max(&mut self) {
         let mut min_val = f64::INFINITY;
         let mut max_val = -f64::INFINITY;
@@ -171,9 +183,9 @@ impl PingStats {
 
         let mut scratch = [0.0_f64; CAPACITY];
         let start = (self.head + CAPACITY - self.len) & (CAPACITY - 1);
-        for i in 0..self.len {
+        for (i, value) in scratch.iter_mut().take(self.len).enumerate() {
             let idx = (start + i) & (CAPACITY - 1);
-            scratch[i] = self.buffer[idx];
+            *value = self.buffer[idx];
         }
 
         let values = &mut scratch[..self.len];
