@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/obviyus/pong/compare/v1.6.0...v1.6.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **runtime:** preserve terminal cleanup on worker panic ([49101b1](https://github.com/obviyus/pong/commit/49101b13e151441097a7a5e1fbcb50308d5a914d))
+
 # [1.6.0](https://github.com/obviyus/pong/compare/v1.5.0...v1.6.0) (2026-02-12)
 
 
