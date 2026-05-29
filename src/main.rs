@@ -200,7 +200,7 @@ fn run_app(
 
     drop(stop_txs);
     for worker in workers {
-        worker.join().expect("worker thread panicked");
+        worker.join().map_err(|_| "worker thread panicked")?;
     }
 
     Ok(())
