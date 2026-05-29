@@ -57,41 +57,22 @@ impl StatsSnapshot {
 }
 
 pub struct SharedStat {
-    pub region: &'static str,
     snapshot: Mutex<StatsSnapshot>,
 }
 
 impl SharedStat {
     fn new(region: &'static str) -> Self {
         Self {
-            region,
             snapshot: Mutex::new(StatsSnapshot::empty(region)),
         }
     }
 
     fn publish(&self, stats: &mut PingStats) {
-        let snapshot = StatsSnapshot {
-            region: stats.region,
-            last: stats.last(),
-            min: stats.min(),
-            avg: stats.avg(),
-            max: stats.max(),
-            stddev: stats.stddev(),
-            p95: stats.p95(),
-            p99: stats.p99(),
-            samples: stats.total_samples(),
-        };
-
-        if let Ok(mut guard) = self.snapshot.lock() {
-            *guard = snapshot;
-        }
+        *self.snapshot.lock().expect("shared stat mutex poisoned") = stats.snapshot();
     }
 
     fn read(&self) -> StatsSnapshot {
-        match self.snapshot.lock() {
-            Ok(guard) => *guard,
-            Err(_) => StatsSnapshot::empty(self.region),
-        }
+        *self.snapshot.lock().expect("shared stat mutex poisoned")
     }
 }
 
@@ -219,7 +200,7 @@ fn run_app(
 
     drop(stop_txs);
     for worker in workers {
-        let _ = worker.join();
+        worker.join().expect("worker thread panicked");
     }
 
     Ok(())
@@ -234,10 +215,10 @@ fn spawn_worker(
     notify_tx: SyncSender<()>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        let client = match Client::builder().redirect(redirect::Policy::none()).build() {
-            Ok(client) => client,
-            Err(_) => return,
-        };
+        let client = Client::builder()
+            .redirect(redirect::Policy::none())
+            .build()
+            .expect("http client build failed");
 
         let mut local_stats = PingStats::new(region.name);
         while !stop_requested(&stop_rx) {
