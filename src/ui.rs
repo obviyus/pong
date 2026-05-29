@@ -145,53 +145,8 @@ fn draw_warmup(frame: &mut Frame, elapsed: Duration, remaining: Duration, total_
 }
 
 fn row_for_snapshot(snapshot: &StatsSnapshot, visible_cols: usize) -> Row<'static> {
-    match visible_cols {
-        2 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-        ]),
-        3 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
-        ]),
-        4 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
-        ]),
-        5 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
-        ]),
-        6 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
-        ]),
-        7 => Row::new([
-            Cell::from(snapshot.region).style(TEXT_STYLE),
-            Cell::from(format_latency(snapshot.last))
-                .style(style_for_last(snapshot.last, snapshot.avg)),
-            Cell::from(format_latency(snapshot.min)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.avg)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.max)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
-            Cell::from(format_latency(snapshot.p95)).style(YELLOW_STYLE),
-        ]),
-        _ => Row::new([
+    Row::new(
+        [
             Cell::from(snapshot.region).style(TEXT_STYLE),
             Cell::from(format_latency(snapshot.last))
                 .style(style_for_last(snapshot.last, snapshot.avg)),
@@ -201,8 +156,10 @@ fn row_for_snapshot(snapshot: &StatsSnapshot, visible_cols: usize) -> Row<'stati
             Cell::from(format_latency(snapshot.stddev)).style(YELLOW_STYLE),
             Cell::from(format_latency(snapshot.p95)).style(YELLOW_STYLE),
             Cell::from(format_latency(snapshot.p99)).style(YELLOW_STYLE),
-        ]),
-    }
+        ]
+        .into_iter()
+        .take(visible_cols),
+    )
 }
 
 fn compare_snapshot(lhs: &StatsSnapshot, rhs: &StatsSnapshot) -> Ordering {
