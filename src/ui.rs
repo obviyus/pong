@@ -163,13 +163,13 @@ fn row_for_snapshot(snapshot: &StatsSnapshot, visible_cols: usize) -> Row<'stati
 }
 
 fn compare_snapshot(lhs: &StatsSnapshot, rhs: &StatsSnapshot) -> Ordering {
-    match (lhs.avg, rhs.avg) {
+    match (lhs.last.and(lhs.avg), rhs.last.and(rhs.avg)) {
         (Some(la), Some(ra)) => la
             .partial_cmp(&ra)
             .unwrap_or(Ordering::Equal)
             .then_with(|| lhs.region.cmp(rhs.region)),
-        (None, Some(_)) => Ordering::Less,
-        (Some(_), None) => Ordering::Greater,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
         (None, None) => lhs.region.cmp(rhs.region),
     }
 }
@@ -229,4 +229,42 @@ fn digit_count(mut value: u64) -> usize {
         count += 1;
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_regions_follow_successful_regions() {
+        let unknown = StatsSnapshot::empty("unknown");
+        let mut failed = StatsSnapshot::empty("failed");
+        failed.avg = Some(1.0);
+        let mut slow = StatsSnapshot::empty("slow");
+        slow.last = Some(30.0);
+        slow.avg = Some(20.0);
+        let mut fast = StatsSnapshot::empty("fast");
+        fast.last = Some(40.0);
+        fast.avg = Some(10.0);
+
+        let mut snapshots = [unknown, slow, failed, fast];
+        snapshots.sort_by(compare_snapshot);
+        assert_eq!(
+            snapshots.map(|snapshot| snapshot.region),
+            ["fast", "slow", "failed", "unknown"]
+        );
+
+        failed.last = Some(1.0);
+        assert_eq!(compare_snapshot(&failed, &fast), Ordering::Less);
+    }
+
+    #[test]
+    fn equal_averages_sort_by_region_name() {
+        let mut alpha = StatsSnapshot::empty("alpha");
+        alpha.last = Some(10.0);
+        alpha.avg = Some(10.0);
+        let mut beta = alpha;
+        beta.region = "beta";
+        assert_eq!(compare_snapshot(&alpha, &beta), Ordering::Less);
+    }
 }

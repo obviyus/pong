@@ -10,11 +10,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crossterm::cursor::Show;
 use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::{ExecutableCommand, execute};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use reqwest::blocking::Client;
@@ -26,6 +27,7 @@ use crate::stats::PingStats;
 const RETRY_DELAY: Duration = Duration::from_millis(500);
 const PING_INTERVAL: Duration = Duration::from_secs(1);
 const SPINNER_SLEEP: Duration = Duration::from_millis(150);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy)]
 pub struct StatsSnapshot {
@@ -95,23 +97,34 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    let mut workers = Vec::with_capacity(REGIONS_LIST.len());
+    let app_result = (|| {
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        run_app(&mut terminal, cli.warmup, &mut workers)
+    })();
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    let app_result = run_app(&mut terminal, cli.warmup);
+    let raw_mode_result = disable_raw_mode();
+    let screen_result = execute!(io::stdout(), LeaveAlternateScreen, Show);
+    let mut worker_result: Result<(), Box<dyn Error>> = Ok(());
+    for worker in workers {
+        if worker.join().is_err() {
+            worker_result = Err("worker thread panicked".into());
+        }
+    }
 
-    disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
-
-    app_result
+    app_result?;
+    raw_mode_result?;
+    screen_result?;
+    worker_result
 }
 
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     warmup_duration: Duration,
+    workers: &mut Vec<thread::JoinHandle<()>>,
 ) -> Result<(), Box<dyn Error>> {
     let warmup_total_seconds = warmup_duration.as_secs();
     let warmup_start = Instant::now();
@@ -126,7 +139,6 @@ fn run_app(
         .into();
 
     let (notify_tx, notify_rx) = mpsc::sync_channel::<()>(1);
-    let mut workers = Vec::with_capacity(REGIONS_LIST.len());
     let mut stop_txs = Vec::with_capacity(REGIONS_LIST.len());
     for (index, region) in REGIONS_LIST.iter().copied().enumerate() {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -199,9 +211,6 @@ fn run_app(
     }
 
     drop(stop_txs);
-    for worker in workers {
-        worker.join().map_err(|_| "worker thread panicked")?;
-    }
 
     Ok(())
 }
@@ -217,6 +226,7 @@ fn spawn_worker(
     thread::spawn(move || {
         let client = Client::builder()
             .redirect(redirect::Policy::none())
+            .timeout(REQUEST_TIMEOUT)
             .build()
             .expect("http client build failed");
 
@@ -320,4 +330,54 @@ fn is_quit_key(code: KeyCode, modifiers: KeyModifiers) -> bool {
     matches!(code, KeyCode::Char('q') | KeyCode::Char('Q'))
         || (modifiers.contains(KeyModifiers::CONTROL)
             && matches!(code, KeyCode::Char('c') | KeyCode::Char('C')))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+    use std::net::TcpListener;
+
+    #[test]
+    fn stalled_request_cannot_hold_shutdown_past_the_request_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url =
+            Box::leak(format!("http://{}/ping", listener.local_addr().unwrap()).into_boxed_str());
+        let (started_tx, started_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            started_tx.send(()).unwrap();
+            // Leave the response pending until the client's deadline closes the connection.
+            while stream.read(&mut request).unwrap() > 0 {}
+        });
+        let (stop_tx, stop_rx) = mpsc::channel();
+        let (notify_tx, _notify_rx) = mpsc::sync_channel(1);
+        let shared_stats: Arc<[SharedStat]> = vec![SharedStat::new("test")].into();
+        let worker = spawn_worker(
+            Region { name: "test", url },
+            0,
+            shared_stats,
+            Arc::new(AtomicBool::new(true)),
+            stop_rx,
+            notify_tx,
+        );
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let stopped_at = Instant::now();
+        drop(stop_tx);
+        worker.join().unwrap();
+        assert!(stopped_at.elapsed() < Duration::from_secs(3));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn quit_keys_include_control_c() {
+        assert!(is_quit_key(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert!(is_quit_key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(!is_quit_key(KeyCode::Char('c'), KeyModifiers::NONE));
+    }
 }

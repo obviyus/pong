@@ -15,9 +15,6 @@ pub struct PingStats {
     buffer: [f64; CAPACITY],
     len: usize,
     head: usize,
-    welford_count: u64,
-    welford_mean: f64,
-    welford_m2: f64,
     running_min: f64,
     running_max: f64,
     min_max_valid: bool,
@@ -34,9 +31,6 @@ impl PingStats {
             buffer: [0.0; CAPACITY],
             len: 0,
             head: 0,
-            welford_count: 0,
-            welford_mean: 0.0,
-            welford_m2: 0.0,
             running_min: f64::INFINITY,
             running_max: -f64::INFINITY,
             min_max_valid: true,
@@ -48,6 +42,7 @@ impl PingStats {
     }
 
     pub fn add_sample(&mut self, latency_ms: Option<f64>) {
+        self.last_value = latency_ms;
         let value = match latency_ms {
             Some(v) => v,
             None => return,
@@ -66,12 +61,6 @@ impl PingStats {
             self.len += 1;
         }
 
-        self.welford_count = self.welford_count.saturating_add(1);
-        let delta = value - self.welford_mean;
-        self.welford_mean += delta / self.welford_count as f64;
-        let delta2 = value - self.welford_mean;
-        self.welford_m2 += delta * delta2;
-
         if value < self.running_min {
             self.running_min = value;
         }
@@ -79,7 +68,6 @@ impl PingStats {
             self.running_max = value;
         }
 
-        self.last_value = Some(value);
         self.percentile_valid = false;
         self.total_samples = self.total_samples.saturating_add(1);
     }
@@ -89,17 +77,22 @@ impl PingStats {
     }
 
     pub fn avg(&self) -> Option<f64> {
-        if self.welford_count == 0 {
+        if self.len == 0 {
             return None;
         }
-        Some(self.welford_mean)
+        Some(self.buffer[..self.len].iter().sum::<f64>() / self.len as f64)
     }
 
     pub fn stddev(&self) -> Option<f64> {
-        if self.welford_count < 2 {
+        if self.len < 2 {
             return None;
         }
-        let variance = self.welford_m2 / (self.welford_count - 1) as f64;
+        let mean = self.avg()?;
+        let variance = self.buffer[..self.len]
+            .iter()
+            .map(|value| (value - mean).powi(2))
+            .sum::<f64>()
+            / (self.len - 1) as f64;
         Some(variance.sqrt())
     }
 
@@ -218,4 +211,107 @@ fn percentile_index(len: usize, numerator: usize, denominator: usize) -> usize {
 
 fn compare_latency(lhs: &f64, rhs: &f64) -> Ordering {
     lhs.partial_cmp(rhs).unwrap_or(Ordering::Equal)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close(actual: Option<f64>, expected: f64) {
+        let actual = actual.expect("expected a measurement");
+        assert!((actual - expected).abs() < 1e-9, "{actual} != {expected}");
+    }
+
+    #[test]
+    fn empty_and_single_sample_statistics() {
+        let mut stats = PingStats::new("test");
+        let empty = stats.snapshot();
+        assert_eq!(empty.last, None);
+        assert_eq!(empty.min, None);
+        assert_eq!(empty.avg, None);
+        assert_eq!(empty.max, None);
+        assert_eq!(empty.stddev, None);
+        assert_eq!(empty.p95, None);
+        assert_eq!(empty.p99, None);
+        assert_eq!(empty.samples, 0);
+
+        stats.add_sample(Some(12.5));
+        let single = stats.snapshot();
+        for metric in [
+            single.last,
+            single.min,
+            single.avg,
+            single.max,
+            single.p95,
+            single.p99,
+        ] {
+            assert_eq!(metric, Some(12.5));
+        }
+        assert_eq!(single.stddev, None);
+        assert_eq!(single.samples, 1);
+    }
+
+    #[test]
+    fn discarded_samples_do_not_affect_any_statistic() {
+        let mut stats = PingStats::new("test");
+        for _ in 0..128 {
+            stats.add_sample(Some(100.0));
+        }
+        for _ in 0..128 {
+            stats.add_sample(Some(10.0));
+        }
+        let snapshot = stats.snapshot();
+        for metric in [
+            snapshot.min,
+            snapshot.avg,
+            snapshot.max,
+            snapshot.p95,
+            snapshot.p99,
+        ] {
+            assert_close(metric, 10.0);
+        }
+        assert_close(snapshot.stddev, 0.0);
+        assert_eq!(snapshot.samples, 256);
+    }
+
+    #[test]
+    fn statistics_follow_the_window_through_repeated_wraps() {
+        let mut stats = PingStats::new("test");
+        for value in 1..=512 {
+            stats.add_sample(Some(f64::from(value)));
+            let snapshot = stats.snapshot();
+            let count = value.min(128);
+            let min = f64::from(value - count + 1);
+            assert_close(snapshot.min, min);
+            assert_close(snapshot.max, f64::from(value));
+            assert_close(snapshot.avg, (min + f64::from(value)) / 2.0);
+            assert_close(snapshot.p95, min + (f64::from(count) * 0.95).ceil() - 1.0);
+            assert_close(snapshot.p99, min + (f64::from(count) * 0.99).ceil() - 1.0);
+            if count > 1 {
+                assert_close(
+                    snapshot.stddev,
+                    (f64::from(count * (count + 1)) / 12.0).sqrt(),
+                );
+            }
+            assert_eq!(snapshot.samples, value as u64);
+        }
+    }
+
+    #[test]
+    fn failure_clears_last_and_recovery_preserves_successful_history() {
+        let mut stats = PingStats::new("test");
+        stats.add_sample(Some(10.0));
+        stats.add_sample(None);
+        stats.add_sample(None);
+        let failed = stats.snapshot();
+        assert_eq!(failed.last, None);
+        assert_eq!(failed.avg, Some(10.0));
+        assert_eq!(failed.samples, 1);
+
+        stats.add_sample(Some(20.0));
+        let recovered = stats.snapshot();
+        assert_eq!(recovered.last, Some(20.0));
+        assert_eq!(recovered.avg, Some(15.0));
+        assert_eq!(recovered.samples, 2);
+    }
 }
