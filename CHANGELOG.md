@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/obviyus/pong/compare/v1.6.1...v1.6.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* correct latency statistics and restore terminal before shutdown ([0bf890d](https://github.com/obviyus/pong/commit/0bf890d75b2c352f6d8b7f23cf4c9ed116416e64))
+
 ## [1.6.1](https://github.com/obviyus/pong/compare/v1.6.0...v1.6.1) (2026-05-29)
 
 
