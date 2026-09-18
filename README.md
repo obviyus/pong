@@ -27,4 +27,4 @@ Each request has a two-second timeout. Quitting restores the terminal immediatel
 
 ## How it works
 
-Each region gets a thread that fires a `HEAD` at `https://dynamodb.<region>.amazonaws.com/ping` every second — DynamoDB's health endpoint makes a conveniently ubiquitous latency target. Results flow back over an `mpsc` channel into the ring buffers behind the table. Pure `std` threads, no async runtime. Written in Rust with [`ratatui`](https://github.com/ratatui/ratatui) + `crossterm`.
+Each region gets a thread that fires a `HEAD` at `https://dynamodb.<region>.amazonaws.com/ping` every second — DynamoDB's health endpoint makes a conveniently ubiquitous latency target. Workers share one HTTP client and keep their own sample buffers. They publish snapshots for the table and signal updates through a bounded channel. Written in Rust with [`ratatui`](https://github.com/ratatui/ratatui) + `crossterm`.

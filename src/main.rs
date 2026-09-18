@@ -83,6 +83,32 @@ struct Cli {
     help_only: bool,
 }
 
+struct TerminalGuard {
+    active: bool,
+}
+
+impl TerminalGuard {
+    fn new() -> io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(Self { active: true })
+    }
+
+    fn restore(&mut self) -> io::Result<()> {
+        self.active = false;
+        let raw_mode_result = disable_raw_mode();
+        let screen_result = execute!(io::stdout(), LeaveAlternateScreen, Show);
+        raw_mode_result.and(screen_result)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = self.restore();
+        }
+    }
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("{err}");
@@ -96,7 +122,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    enable_raw_mode()?;
+    let mut terminal_guard = TerminalGuard::new()?;
     let mut workers = Vec::with_capacity(REGIONS_LIST.len());
     let app_result = (|| {
         let mut stdout = io::stdout();
@@ -106,8 +132,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         run_app(&mut terminal, cli.warmup, &mut workers)
     })();
 
-    let raw_mode_result = disable_raw_mode();
-    let screen_result = execute!(io::stdout(), LeaveAlternateScreen, Show);
+    let terminal_result = terminal_guard.restore();
     let mut worker_result: Result<(), Box<dyn Error>> = Ok(());
     for worker in workers {
         if worker.join().is_err() {
@@ -116,8 +141,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     app_result?;
-    raw_mode_result?;
-    screen_result?;
+    terminal_result?;
     worker_result
 }
 
@@ -126,6 +150,7 @@ fn run_app(
     warmup_duration: Duration,
     workers: &mut Vec<thread::JoinHandle<()>>,
 ) -> Result<(), Box<dyn Error>> {
+    let client = http_client()?;
     let warmup_total_seconds = warmup_duration.as_secs();
     let warmup_start = Instant::now();
     let mut warmup_ready = warmup_duration.is_zero();
@@ -144,6 +169,7 @@ fn run_app(
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         stop_txs.push(stop_tx);
         let worker = spawn_worker(
+            client.clone(),
             region,
             index,
             Arc::clone(&shared_stats),
@@ -216,6 +242,7 @@ fn run_app(
 }
 
 fn spawn_worker(
+    client: Client,
     region: Region,
     stat_index: usize,
     shared_stats: Arc<[SharedStat]>,
@@ -224,12 +251,6 @@ fn spawn_worker(
     notify_tx: SyncSender<()>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        let client = Client::builder()
-            .redirect(redirect::Policy::none())
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .expect("http client build failed");
-
         let mut local_stats = PingStats::new(region.name);
         while !stop_requested(&stop_rx) {
             let measurement = take_measurement(&client, region.url, &stop_rx);
@@ -244,6 +265,13 @@ fn spawn_worker(
             }
         }
     })
+}
+
+fn http_client() -> Result<Client, reqwest::Error> {
+    Client::builder()
+        .redirect(redirect::Policy::none())
+        .timeout(REQUEST_TIMEOUT)
+        .build()
 }
 
 fn notify(tx: &SyncSender<()>) {
@@ -359,6 +387,7 @@ mod tests {
         let (notify_tx, _notify_rx) = mpsc::sync_channel(1);
         let shared_stats: Arc<[SharedStat]> = vec![SharedStat::new("test")].into();
         let worker = spawn_worker(
+            http_client().unwrap(),
             Region { name: "test", url },
             0,
             shared_stats,
