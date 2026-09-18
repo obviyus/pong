@@ -1,3 +1,10 @@
+## [1.6.3](https://github.com/obviyus/pong/compare/v1.6.2...v1.6.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* share HTTP client and restore terminal on panic ([#12](https://github.com/obviyus/pong/issues/12)) ([a02fd8b](https://github.com/obviyus/pong/commit/a02fd8b404052bbf9536822e441a5a7c60356daf))
+
 ## [1.6.2](https://github.com/obviyus/pong/compare/v1.6.1...v1.6.2) (2026-09-07)
 
 
